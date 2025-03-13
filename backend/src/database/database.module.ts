@@ -5,9 +5,13 @@ import { MongooseModule } from '@nestjs/mongoose';
 @Module({
   imports: [
     MongooseModule.forRootAsync({
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.getOrThrow('MONGODB_URI'),
-      }),
+      useFactory: (configService: ConfigService) => {
+        return {
+          uri: configService.getOrThrow('MONGODB_URI'),
+          useNewUrlParser: true,
+          useUnifiedTopology: true,
+        };
+      },
       inject: [ConfigService],
     }),
   ],
