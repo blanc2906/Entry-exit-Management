@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
-import { User, UserSchema } from 'src/database/schema/user.schema';
+import { User,UserDocument, UserSchema } from 'src/schema/user.schema';
+import { Device, DeviceDocument } from 'src/schema/device.schema';
 import { MqttModule } from 'src/modules/mqtt/mqtt.module';
 
 
