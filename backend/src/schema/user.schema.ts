@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { now, Types } from "mongoose";
+import { Device } from "./device.schema";
 
 
 export type UserDocument = User & Document;
@@ -34,6 +35,9 @@ export class User {
 
     @Prop()
     updatedAt: Date;
+
+    @Prop({type : [{type : Types.ObjectId, ref : 'Device'}]})
+    devices: Types.ObjectId[];
 
 }
 

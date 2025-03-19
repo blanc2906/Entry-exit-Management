@@ -1,13 +1,18 @@
 import { Injectable } from "@nestjs/common";
 import { Model } from "mongoose";
-import { UserDocument } from "src/schema/user.schema";
+import { User, UserDocument } from "src/schema/user.schema";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { find } from "rxjs";
+import { InjectModel } from "@nestjs/mongoose";
+import { MqttService } from "../mqtt/mqtt.service";
 
 @Injectable()
 export class UsersService {
   constructor(
+    @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+
+    private readonly mqttService : MqttService
   ) {}
 
   async createUser(createUserDto : CreateUserDto) : Promise<UserDocument> {
@@ -51,5 +56,8 @@ export class UsersService {
     }
   }
 
-  async 
+  async test(){
+    await this.mqttService.publish('test', 'test');
+
+  }
 }

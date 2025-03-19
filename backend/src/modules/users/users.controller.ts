@@ -1,4 +1,4 @@
-import { Controller, Logger } from "@nestjs/common";
+import { Controller, Logger, Post } from "@nestjs/common";
 import { UsersService } from "./users.service";
 
 
@@ -10,6 +10,12 @@ export class UsersController {
   constructor( 
     private readonly usersService : UsersService,
   ) {}
+
+  @Post('test')
+  async test() {
+    this.logger.log('Test');
+    await this.usersService.test();
+  }
 
   
 
