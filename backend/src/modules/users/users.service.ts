@@ -55,6 +55,26 @@ export class UsersService {
       throw new Error(`Failed to remove user : ${error.message}`);
     }
   }
+  async requestAddFingerprint(userId: string){
+    await this.mqttService.publish('add_fingerprint', userId);
+  }
+  async addFingerprint(userId: string, fingerId: string, fingerTemplate: string): Promise<UserDocument> {
+    try {
+      const user = await this.userModel.findById(userId);
+      
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      user.fingerId = fingerId;
+      user.fingerTemplate = fingerTemplate;
+      user.updatedAt = new Date();
+
+      return await user.save();
+    } catch (error) {
+      throw new Error(`Failed to add fingerprint: ${error.message}`);
+    }
+  }
 
   async test(){
     await this.mqttService.publish('test', 'test');

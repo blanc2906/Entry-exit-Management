@@ -2,8 +2,8 @@
 
 #define SECRET
 
-const char WIFI_SSID[] = "Hust_TV.TQB";
-const char WIFI_PASSWORD[] = "";
+const char WIFI_SSID[] = "Phong 304";
+const char WIFI_PASSWORD[] = "Buivietlang29062003";
 const char CERT[] = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw

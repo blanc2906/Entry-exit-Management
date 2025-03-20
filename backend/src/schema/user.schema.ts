@@ -12,22 +12,22 @@ export class User {
     @Prop({required: true, unique: true})
     userId: string; 
 
-    @Prop({unique: true})
-    avatar: string;
+    // @Prop({unique: true, default : null})
+    // avatar: string;
 
     @Prop({required: true})
     name: string;
 
-    @Prop({required: true, unique: true})
+    @Prop({unique: true, sparse: true})
     email : string;
 
-    @Prop({required: true, unique: true})
+    @Prop({unique: true, sparse: true})
     fingerId: string;
 
     @Prop({default : null})
     fingerTemplate: string;
 
-    @Prop({required: true, unique: true})
+    @Prop({unique: true, sparse: true})
     cardNumber : string;
 
     @Prop({required : true, default : now})

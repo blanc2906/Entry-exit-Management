@@ -1,9 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { Device, DeviceDocument } from 'src/schema/device.schema';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User, UserDocument } from 'src/schema/user.schema';
 
 @Injectable()
@@ -34,14 +34,38 @@ export class DevicesService {
     }
   }
 
-  async addUserToDevice(deviceId: string, userId: string) : Promise<any>{
-    try{
-      const device = await this.deviceModel.findOne({deviceId});
-      if(!device){
-        throw new Error('device not found');
+  async addUserToDevice(deviceId: string, userId: string) {
+    try {
+      const device = await this.deviceModel.findById(deviceId);
+      const user = await this.userModel.findById(userId);
+
+      if (!device || !user) {
+        throw new NotFoundException('Device or User not found');
       }
-    }catch(error){
-      throw new Error(`Failed to add user to device : ${error.message}`);
+      if (!device.users.includes(new Types.ObjectId(userId))) {
+        device.users.push(new Types.ObjectId(userId));
+        await device.save();
+      }
+
+      return device;
+    } catch (error) {
+      throw new Error(`Failed to add user to device: ${error.message}`);
+    }
+  }
+
+  async removeUserFromDevice(deviceId: string, userId: string) {
+    try {
+      const device = await this.deviceModel.findById(deviceId);
+      
+      if (!device) {
+        throw new NotFoundException('Device not found');
+      }
+      device.users = device.users.filter(id => id.toString() !== userId);
+      await device.save();
+
+      return device;
+    } catch (error) {
+      throw new Error(`Failed to remove user from device: ${error.message}`);
     }
   }
 }

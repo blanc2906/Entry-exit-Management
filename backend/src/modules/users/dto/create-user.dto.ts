@@ -9,11 +9,11 @@ export class CreateUserDto {
     @IsNotEmpty()
     name: string;
 
-    @IsString()
-    email: string;
+    // @IsString()
+    // email: string;
 
-    @IsString()
-    fingerPrint: number;
+    // @IsString()
+    // fingerPrint: number;
 
     @IsNotEmpty()
     createdAt: Date;

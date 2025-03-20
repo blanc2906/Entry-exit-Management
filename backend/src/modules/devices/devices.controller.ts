@@ -7,9 +7,24 @@ import { UpdateDeviceDto } from './dto/update-device.dto';
 export class DevicesController {
   constructor(private readonly devicesService: DevicesService) {}
 
-  @Post()
+  @Post('create-device')
   create(@Body() createDeviceDto: CreateDeviceDto) {
     return this.devicesService.create(createDeviceDto);
   }
 
+  @Post(':deviceId/users/:userId')
+  addUserToDevice(
+    @Param('deviceId') deviceId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.devicesService.addUserToDevice(deviceId, userId);
+  }
+
+  @Delete(':deviceId/users/:userId')
+  removeUserFromDevice(
+    @Param('deviceId') deviceId: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.devicesService.removeUserFromDevice(deviceId, userId);
+  }
 }

@@ -3,8 +3,10 @@
 #include <WiFiClientSecure.h>
 #include <Adafruit_Fingerprint.h>
 #include <HardwareSerial.h>
-#include <secret.h>
+#include "secret.h"
 #include <LiquidCrystal_I2C.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 
 int lcdColumns = 16;
 int lcdRows = 2;
@@ -22,6 +24,8 @@ const int mqtt_port = MQTT_PORT;
 
 const char *ca_cert = CERT;
 
+const char *server_url = "http://192.168.1.3:3000/users/add-fingerprint";
+
 WiFiClientSecure esp_client;
 PubSubClient mqtt_client(esp_client);
 
@@ -30,7 +34,7 @@ Adafruit_Fingerprint finger(&mySerial);
 
 uint8_t id;
 uint8_t lastUsedId = 0;
-
+String currentUserId = "";
 
 void setup() {
   Serial.begin(9600);
@@ -66,7 +70,7 @@ void setup() {
   }
   mqtt_client.subscribe(topic);
   mqtt_client.subscribe("delete_user");
-  mqtt_client.subscribe("create_user");
+  mqtt_client.subscribe("add_fingerprint");
   mqtt_client.subscribe("attended_success");
 
   while (!Serial); 
@@ -104,65 +108,88 @@ void callback(char *topic, byte *payload, unsigned int length) {
   Serial.println(topic);
   Serial.print("Message: ");
   
-  // Convert payload to string
   char message[length + 1];
   memcpy(message, payload, length);
   message[length] = '\0';
   
   Serial.println(message);
 
-  if (strcmp(topic, "create_user") == 0) {
+  if (strcmp(topic, "add_fingerprint") == 0) {
     Serial.println("Starting enrollment process...");
-    uint8_t newId = enrollFingerprint();
     
-    if (newId > 0) {
-        Serial.printf("Successfully enrolled fingerprint for ID #%d\n", newId);
-    } else {
-        Serial.println("Enrollment failed");
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, message);
+    
+    if (error) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+      return;
     }
-  }
+    
+    const char* userId = doc["data"];
+    if (userId) {
+      currentUserId = String(userId);
+      Serial.print("User ID to enroll: ");
+      Serial.println(currentUserId);
 
-  else if (strcmp(topic, "attended_success") == 0) {
-    // Extract name from the JSON-like message
-    char* dataStart = strstr(message, "\"data\":\"");
-    if (dataStart) {
-      dataStart += 8; // Skip "data":"
-      char* dataEnd = strchr(dataStart, '"');
-      if (dataEnd) {
-        char name[32]; // Buffer for the name
-        int len = dataEnd - dataStart;
-        strncpy(name, dataStart, len);
-        name[len] = '\0';
-        
-        // Display welcome message and name
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Welcome");
-        lcd.setCursor(0, 1);
-        lcd.print(name);
-        delay(5000);
+      uint8_t newId = enrollFingerprint();
+
+      if (newId > 0) {
+        Serial.printf("Successfully enrolled fingerprint for ID #%d\n", newId);
+        sendFingerDataToServer(currentUserId, newId);
+      } else {
+        Serial.println("Enrollment failed");
       }
+    } else {
+      Serial.println("No data field found in message");
     }
   }
-  else if (strcmp(topic, "delete_user") == 0) {
-    // Extract finger_id from the JSON-like message
-    char* dataStart = strstr(message, "\"data\":\"");
-    if (dataStart) {
-      dataStart += 8; // Skip "data":"
-      char* dataEnd = strchr(dataStart, '"');
-      if (dataEnd) {
-        char finger_id_str[4];
-        int len = dataEnd - dataStart;
-        strncpy(finger_id_str, dataStart, len);
-        finger_id_str[len] = '\0';
-        
-        uint8_t finger_id = atoi(finger_id_str);
-        Serial.print("Deleting fingerprint ID #");
-        Serial.println(finger_id);
-        deleteFingerprint(finger_id);
-      }
-    }
+}
+
+void sendFingerDataToServer(String userId, uint8_t fingerId) {
+  HTTPClient http;
+  
+  http.begin(server_url);
+  http.addHeader("Content-Type", "application/json");
+  
+  String fingerTemplate = getFingerprintTemplate(fingerId);
+  
+  StaticJsonDocument<1024> doc;
+  doc["userId"] = userId;
+  doc["fingerId"] = String(fingerId);
+  doc["fingerTemplate"] = fingerTemplate;
+  
+  String requestBody;
+  serializeJson(doc, requestBody);
+  
+  Serial.println("Sending POST request to server...");
+  Serial.println(requestBody);
+  
+  int httpResponseCode = http.POST(requestBody);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println("HTTP Response code: " + String(httpResponseCode));
+    Serial.println("Response: " + response);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Data sent");
+    lcd.setCursor(0, 1);
+    lcd.print("Successfully");
+    delay(3000);
+  } else {
+    Serial.println("HTTP Error: " + String(httpResponseCode));
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Failed to send");
+    lcd.setCursor(0, 1);
+    lcd.print("Error: " + String(httpResponseCode));
+    delay(3000);
   }
+  
+  http.end();
 }
 
 void reconnect() {
@@ -174,7 +201,7 @@ void reconnect() {
       Serial.println("Reconnected to MQTT broker");
       mqtt_client.subscribe(topic);
       mqtt_client.subscribe("delete_user");
-      mqtt_client.subscribe("create_user"); 
+      mqtt_client.subscribe("add_fingerprint"); 
       mqtt_client.subscribe("attended_success");
     } else {
       Serial.print("Failed to connect, state: ");
@@ -192,6 +219,7 @@ uint8_t readnumber(void) {
   }
   return num;
 }
+
 void loop() {
   if (!WiFi.isConnected()) {
     Serial.println("WiFi disconnected, reconnecting...");
@@ -236,7 +264,6 @@ uint8_t getFingerprintID() {
       return p;
   }
 
-  // OK success!
   p = finger.image2Tz();
   switch (p) {
     case FINGERPRINT_OK:
@@ -286,7 +313,6 @@ uint8_t getFingerprintID() {
     return p;
   }
 
-  // found a match!
   Serial.print("Found ID #"); Serial.print(finger.fingerID);
   Serial.print(" with confidence of "); Serial.println(finger.confidence);
 
@@ -297,7 +323,6 @@ uint8_t getFingerprintID() {
   return finger.fingerID;
 }
 
-// returns -1 if failed, otherwise returns ID #
 int getFingerprintIDez() {
   uint8_t p = finger.getImage();
   if (p != FINGERPRINT_OK)  return -1;
@@ -308,7 +333,6 @@ int getFingerprintIDez() {
   p = finger.fingerFastSearch();
   if (p != FINGERPRINT_OK)  return -1;
 
-  // found a match!
   Serial.print("Found ID #"); Serial.print(finger.fingerID);
   Serial.print(" with confidence of "); Serial.println(finger.confidence);
   return finger.fingerID;
@@ -335,7 +359,6 @@ uint8_t deleteFingerprint(uint8_t id) {
 }
 
 uint8_t enrollFingerprint() {
-  // Get current template count
   if (finger.getTemplateCount() != FINGERPRINT_OK) {
     Serial.println("Error getting template count");
     return 0;
@@ -344,20 +367,15 @@ uint8_t enrollFingerprint() {
   Serial.print("Current template count: ");
   Serial.println(finger.templateCount);
   
-  // Check if there's space available (max 127 fingerprints)
   if (finger.templateCount >= 127) {
     Serial.println("No free slot available - maximum capacity reached!");
     return 0;
   }
   
-  // Start from ID 1
   id = 1;
-  
-  // Find first available slot
   while (id <= 127) {
     uint8_t p = finger.loadModel(id);
     if (p == FINGERPRINT_PACKETRECIEVEERR || p != FINGERPRINT_OK) {
-      // Empty slot found
       Serial.print("Found empty slot at ID #");
       Serial.println(id);
       break;
@@ -386,7 +404,6 @@ bool getFingerprintEnroll(uint8_t id) {
   lcd.print(id);
   Serial.println("Waiting for valid finger to enroll");
   
-  // First reading
   while (p != FINGERPRINT_OK) {
     p = finger.getImage();
     switch (p) {
@@ -412,17 +429,14 @@ bool getFingerprintEnroll(uint8_t id) {
     delay(100);
   }
 
-  // Convert first image to template for checking duplicates
   p = finger.image2Tz(1);
   if (p != FINGERPRINT_OK) {
     Serial.println("Image conversion failed");
     return false;
   }
 
-  // Check for duplicate fingerprint
   p = finger.fingerFastSearch();
   if (p == FINGERPRINT_OK) {
-    // Fingerprint already exists
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Already Exists!");
@@ -434,7 +448,6 @@ bool getFingerprintEnroll(uint8_t id) {
     delay(5000);
     return false;
   } else if (p == FINGERPRINT_NOTFOUND) {
-    // Fingerprint is new, proceed with enrollment
     Serial.println("No duplicate found, proceeding with enrollment");
   } else {
     Serial.println("Error during duplicate check");
@@ -452,7 +465,6 @@ bool getFingerprintEnroll(uint8_t id) {
     delay(100);
   }
 
-  // Second reading
   Serial.println("Place same finger again");
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -485,21 +497,18 @@ bool getFingerprintEnroll(uint8_t id) {
     delay(100);
   }
 
-  // Convert second image to template
   p = finger.image2Tz(2);
   if (p != FINGERPRINT_OK) {
     Serial.println("Image conversion failed");
     return false;
   }
 
-  // Create model from the two templates
   p = finger.createModel();
   if (p != FINGERPRINT_OK) {
     Serial.println("Failed to create model");
     return false;
   }
 
-  // Store the model
   p = finger.storeModel(id);
   if (p != FINGERPRINT_OK) {
     Serial.println("Failed to store model");
@@ -514,4 +523,29 @@ bool getFingerprintEnroll(uint8_t id) {
   delay(5000);
   Serial.println("Fingerprint enrolled successfully!");
   return true;
+}
+String getFingerprintTemplate(uint8_t id) {
+  uint8_t p = finger.loadModel(id);
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Failed to load model");
+    return "";
+  }
+
+  uint8_t templateData[512];
+  uint16_t templateSize = sizeof(templateData);
+  
+  p = finger.getModel();
+  if (p != FINGERPRINT_OK) {
+    Serial.println("Failed to get model");
+    return "";
+  }
+
+  String base64Template = "";
+  for (uint16_t i = 0; i < templateSize; i++) {
+    char hex[3];
+    sprintf(hex, "%02X", templateData[i]);
+    base64Template += hex;
+  }
+
+  return base64Template;
 }
