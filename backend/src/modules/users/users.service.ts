@@ -80,4 +80,21 @@ export class UsersService {
     await this.mqttService.publish('test', 'test');
 
   }
+  async getUserFingerprint(userId: string): Promise<any> {
+    try {
+      const user = await this.userModel.findById(userId);
+      
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      return {
+        fingerId: user.fingerId,
+        userId: String(user._id),
+        templateData : user.fingerTemplate
+      };
+    } catch (error) {
+      throw new Error(`Failed to get user fingerprint: ${error.message}`);
+    }
+  }
 }

@@ -7,6 +7,10 @@
 #include <LiquidCrystal_I2C.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <base64.h>
+#include <esp_wifi.h>
+
+String macAddress = "";
 
 int lcdColumns = 16;
 int lcdRows = 2;
@@ -26,6 +30,8 @@ const char *ca_cert = CERT;
 
 const char *server_url = "http://192.168.1.3:3000/users/add-fingerprint";
 
+String base_topic = "verify_device_";
+String response_topic = "verified_device_";
 WiFiClientSecure esp_client;
 PubSubClient mqtt_client(esp_client);
 
@@ -68,13 +74,19 @@ void setup() {
       delay(2000);
     }
   }
+  base_topic += String(WiFi.macAddress());
+  response_topic += String(WiFi.macAddress());
   mqtt_client.subscribe(topic);
   mqtt_client.subscribe("delete_user");
   mqtt_client.subscribe("add_fingerprint");
   mqtt_client.subscribe("attended_success");
+  mqtt_client.subscribe("import_fingerprint");
+  mqtt_client.subscribe(base_topic.c_str());
 
   while (!Serial); 
   delay(100);
+  Serial.print("[DEFAULT] ESP32 Board MAC Address: ");
+  readMacAddress();
 
   mySerial.begin(57600, SERIAL_8N1, 16, 17);
   
@@ -100,6 +112,19 @@ void setup() {
     Serial.print(finger.templateCount); 
     Serial.println(" templates");
     Serial.println("Starting detection mode...");
+  }
+}
+void readMacAddress(){
+  uint8_t baseMac[6];
+  esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, baseMac);
+  if (ret == ESP_OK) {
+    macAddress = String(baseMac[0], HEX) + ":" + String(baseMac[1], HEX) + ":" +
+                 String(baseMac[2], HEX) + ":" + String(baseMac[3], HEX) + ":" +
+                 String(baseMac[4], HEX) + ":" + String(baseMac[5], HEX);
+    macAddress.toUpperCase();
+    Serial.println(macAddress);
+  } else {
+    Serial.println("Failed to read MAC address");
   }
 }
 
@@ -144,53 +169,95 @@ void callback(char *topic, byte *payload, unsigned int length) {
       Serial.println("No data field found in message");
     }
   }
+
+  if (strcmp(topic, "import_fingerprint") == 0) {
+    Serial.println("Starting fingerprint import process...");
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, message);
+    
+    if (error) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+      return;
+    }
+    
+    const char* userId = doc["data"];
+    if (userId) {
+      currentUserId = String(userId);
+      Serial.print("User ID to import: ");
+      Serial.println(currentUserId);
+      getTemplateFromServerWithUserId(userId);
+    } else {
+      Serial.println("No data field found in message");
+    }
+    
+  }
+  if (strcmp(topic, base_topic.c_str()) == 0 ) {
+    Serial.println("Verifying device...");
+    mqtt_client.publish(response_topic.c_str(),"verified");
+    
+  }
 }
 
-void sendFingerDataToServer(String userId, uint8_t fingerId) {
-  HTTPClient http;
+// void sendFingerDataToServer(String userId, uint8_t fingerId) {
+//   HTTPClient http;
   
-  http.begin(server_url);
-  http.addHeader("Content-Type", "application/json");
+//   http.begin(server_url);
+//   http.addHeader("Content-Type", "application/json");
   
-  String fingerTemplate = getFingerprintTemplate(fingerId);
+//   String fingerTemplate = getFingerprintTemplate(fingerId);
   
-  StaticJsonDocument<1024> doc;
-  doc["userId"] = userId;
-  doc["fingerId"] = String(fingerId);
-  doc["fingerTemplate"] = fingerTemplate;
-  
-  String requestBody;
-  serializeJson(doc, requestBody);
-  
-  Serial.println("Sending POST request to server...");
-  Serial.println(requestBody);
-  
-  int httpResponseCode = http.POST(requestBody);
-  
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.println("HTTP Response code: " + String(httpResponseCode));
-    Serial.println("Response: " + response);
+//   // Check if we got a valid template
+//   if (fingerTemplate.length() == 0) {
+//     Serial.println("Failed to get fingerprint template, cannot send to server");
     
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Data sent");
-    lcd.setCursor(0, 1);
-    lcd.print("Successfully");
-    delay(3000);
-  } else {
-    Serial.println("HTTP Error: " + String(httpResponseCode));
-    
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Failed to send");
-    lcd.setCursor(0, 1);
-    lcd.print("Error: " + String(httpResponseCode));
-    delay(3000);
-  }
+//     lcd.clear();
+//     lcd.setCursor(0, 0);
+//     lcd.print("Error: No");
+//     lcd.setCursor(0, 1);
+//     lcd.print("template data");
+//     delay(3000);
+//     return;
+//   }
   
-  http.end();
-}
+//   StaticJsonDocument<4096> doc; // Increased size for larger templates
+//   doc["userId"] = userId;
+//   doc["fingerId"] = String(fingerId);
+//   doc["fingerTemplate"] = fingerTemplate;
+  
+//   String requestBody;
+//   serializeJson(doc, requestBody);
+  
+//   Serial.println("Sending POST request to server...");
+//   Serial.print("Template length: ");
+//   Serial.println(fingerTemplate.length());
+  
+//   int httpResponseCode = http.POST(requestBody);
+  
+//   if (httpResponseCode > 0) {
+//     String response = http.getString();
+//     Serial.println("HTTP Response code: " + String(httpResponseCode));
+//     Serial.println("Response: " + response);
+    
+//     lcd.clear();
+//     lcd.setCursor(0, 0);
+//     lcd.print("Data sent");
+//     lcd.setCursor(0, 1);
+//     lcd.print("Successfully");
+//     delay(3000);
+//   } else {
+//     Serial.println("HTTP Error: " + String(httpResponseCode));
+    
+//     lcd.clear();
+//     lcd.setCursor(0, 0);
+//     lcd.print("Failed to send");
+//     lcd.setCursor(0, 1);
+//     lcd.print("Error: " + String(httpResponseCode));
+//     delay(3000);
+//   }
+  
+//   http.end();
+// }
 
 void reconnect() {
   while (!mqtt_client.connected()) {
@@ -203,6 +270,8 @@ void reconnect() {
       mqtt_client.subscribe("delete_user");
       mqtt_client.subscribe("add_fingerprint"); 
       mqtt_client.subscribe("attended_success");
+      mqtt_client.subscribe("import_fingerprint");
+      mqtt_client.subscribe(base_topic.c_str());
     } else {
       Serial.print("Failed to connect, state: ");
       Serial.println(mqtt_client.state());
@@ -524,28 +593,240 @@ bool getFingerprintEnroll(uint8_t id) {
   Serial.println("Fingerprint enrolled successfully!");
   return true;
 }
+
 String getFingerprintTemplate(uint8_t id) {
-  uint8_t p = finger.loadModel(id);
-  if (p != FINGERPRINT_OK) {
-    Serial.println("Failed to load model");
-    return "";
-  }
-
-  uint8_t templateData[512];
-  uint16_t templateSize = sizeof(templateData);
+  Serial.print("Attempting to load template #"); 
+  Serial.println(id);
   
+  uint8_t p = finger.loadModel(id);
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.print("Template "); Serial.print(id); Serial.println(" loaded");
+      break;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Communication error");
+      return "";
+    default:
+      Serial.print("Unknown error "); Serial.println(p);
+      return "";
+  }
+
+  // OK success!
+  Serial.print("Attempting to get template #"); Serial.println(id);
   p = finger.getModel();
-  if (p != FINGERPRINT_OK) {
-    Serial.println("Failed to get model");
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.print("Template "); Serial.print(id); Serial.println(" transferring:");
+      break;
+    default:
+      Serial.print("Unknown error "); Serial.println(p);
+      return "";
+  }
+
+  
+  uint8_t bytesReceived[534]; 
+  memset(bytesReceived, 0xff, 534);
+
+  uint32_t starttime = millis();
+  int i = 0;
+  while (i < 534 && (millis() - starttime) < 20000) {
+    if (mySerial.available()) {
+      bytesReceived[i++] = mySerial.read();
+    }
+  }
+  Serial.print(i); Serial.println(" bytes read.");
+  
+  if (i != 534) {
+    Serial.println("Failed to read complete template");
     return "";
   }
+  
+  Serial.println("Decoding packet...");
 
-  String base64Template = "";
-  for (uint16_t i = 0; i < templateSize; i++) {
-    char hex[3];
-    sprintf(hex, "%02X", templateData[i]);
-    base64Template += hex;
+  uint8_t fingerTemplate[512]; 
+  memset(fingerTemplate, 0xff, 512);
+
+  
+  int uindx = 9, index = 0;
+  memcpy(fingerTemplate + index, bytesReceived + uindx, 256);   
+  uindx += 256;       
+  uindx += 2;         
+  uindx += 9;         
+  index += 256;       
+  memcpy(fingerTemplate + index, bytesReceived + uindx, 256);
+
+  
+  String hexTemplate = "";
+  for (int i = 0; i < 512; ++i) {
+    if (fingerTemplate[i] < 0x10) {
+      hexTemplate += "0";
+    }
+    hexTemplate += String(fingerTemplate[i], HEX);
   }
-
-  return base64Template;
+  
+  Serial.print("Template length: ");
+  Serial.println(hexTemplate.length());
+  return hexTemplate;
 }
+
+void sendFingerDataToServer(String userId, uint8_t fingerId) {
+  HTTPClient http;
+  
+  http.begin(server_url);
+  http.addHeader("Content-Type", "application/json");
+  
+  String fingerTemplate = getFingerprintTemplate(fingerId);
+  
+  if (fingerTemplate.length() == 0) {
+    Serial.println("Failed to get fingerprint template, cannot send to server");
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Error: No");
+    lcd.setCursor(0, 1);
+    lcd.print("template data");
+    delay(3000);
+    return;
+  }
+  
+  StaticJsonDocument<4096> doc; 
+  doc["userId"] = userId;
+  doc["fingerId"] = String(fingerId);
+  doc["fingerTemplate"] = fingerTemplate;
+  
+  String requestBody;
+  serializeJson(doc, requestBody);
+  
+  Serial.println("Sending POST request to server...");
+  Serial.print("Template length: ");
+  Serial.println(fingerTemplate.length());
+  
+  int httpResponseCode = http.POST(requestBody);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println("HTTP Response code: " + String(httpResponseCode));
+    Serial.println("Response: " + response);
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Data sent");
+    lcd.setCursor(0, 1);
+    lcd.print("Successfully");
+    delay(3000);
+  } else {
+    Serial.println("HTTP Error: " + String(httpResponseCode));
+    
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Failed to send");
+    lcd.setCursor(0, 1);
+    lcd.print("Error: " + String(httpResponseCode));
+    delay(3000);
+  }
+  
+  http.end();
+}
+
+
+
+
+int decode_base64(unsigned char *input, unsigned char *output) {
+  // Tìm độ dài của chuỗi Base64
+  int len = strlen((char*)input);
+  
+  // Tạo bảng tra cứu giá trị Base64
+  int base64_map[256] = {0};
+  for (int i = 0; i < 64; i++) {
+    if (i < 26) base64_map['A' + i] = i;
+    else if (i < 52) base64_map['a' + (i - 26)] = i;
+    else if (i < 62) base64_map['0' + (i - 52)] = i;
+    else if (i == 62) base64_map['+'] = i;
+    else if (i == 63) base64_map['/'] = i;
+  }
+  
+  // Decode
+  int outlen = 0;
+  for (int i = 0; i < len; i += 4) {
+    // Lấy 4 ký tự Base64
+    uint32_t val = 0;
+    for (int j = 0; j < 4; j++) {
+      if (i + j < len && input[i + j] != '=') 
+        val = (val << 6) | base64_map[input[i + j]];
+      else
+        val = val << 6;
+    }
+    
+    // Chuyển đổi thành 3 byte
+    output[outlen++] = (val >> 16) & 0xFF;
+    if (i + 2 < len && input[i + 2] != '=')
+      output[outlen++] = (val >> 8) & 0xFF;
+    if (i + 3 < len && input[i + 3] != '=')
+      output[outlen++] = val & 0xFF;
+  }
+  
+  return outlen;
+}
+
+void getTemplateFromServerWithUserId(String userId) {
+  HTTPClient http;
+  
+  String url = "http://192.168.1.3:3000/users/" + userId + "/get-finger-data";
+  
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  
+  Serial.print("Getting fingerprint data for user: ");
+  Serial.println(userId);
+  Serial.print("URL: ");
+  Serial.println(url);
+  
+  int httpResponseCode = http.GET();
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.println("HTTP Response code: " + String(httpResponseCode));
+    
+    DynamicJsonDocument doc(8192);
+    DeserializationError error = deserializeJson(doc, response);
+    
+    if (error) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+      http.end();
+      return;
+    }
+    
+    if (doc.containsKey("fingerId") && doc.containsKey("templateData") && doc.containsKey("userId")) {
+      uint8_t fingerId = doc["fingerId"].as<uint8_t>();
+      const char* userId = doc["userId"];
+      const char* templateData = doc["templateData"];
+      
+      Serial.print("Received template - Finger ID: ");
+      Serial.println(fingerId);
+      Serial.print("User ID: ");
+      Serial.println(userId);
+      Serial.print("Template Data Length: ");
+      Serial.println(strlen(templateData));
+      
+      //processFingerprintTemplate(fingerId, userId, templateData);
+      
+      notifyTemplateProcessed(fingerId, userId);
+    } else {
+      Serial.println("Missing required fields in the fingerprint data");
+    }
+  } else {
+    Serial.print("HTTP Error: ");
+    Serial.println(httpResponseCode);
+  }
+  
+  http.end();
+}
+
+
+
+void notifyTemplateProcessed(uint8_t fingerId, const char* userId) {
+}
+
+
+

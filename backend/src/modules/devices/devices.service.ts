@@ -5,6 +5,7 @@ import { Device, DeviceDocument } from 'src/schema/device.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from 'src/schema/user.schema';
+import { MqttService } from '../mqtt/mqtt.service';
 
 @Injectable()
 export class DevicesService {
@@ -13,24 +14,52 @@ export class DevicesService {
     private readonly deviceModel: Model<DeviceDocument>,
     @InjectModel(User.name)
     private readonly userModel : Model<UserDocument>,
+
+    private readonly mqttService : MqttService
   ){}
-  async create(createDeviceDto : CreateDeviceDto) : Promise<DeviceDocument>{
-    try{
-      if(isNaN(Number(createDeviceDto.deviceId))){
-        throw new Error('invalid deviceId');
+  async create(createDeviceDto: CreateDeviceDto): Promise<DeviceDocument> {
+    try {
+      const existingDevice = await this.deviceModel.findOne({ deviceMac: createDeviceDto.deviceMac });
+      if (existingDevice) {
+        throw new Error('Device already exists');
       }
-
-      const existingDevice = await this.deviceModel.findOne({deviceId: createDeviceDto.deviceId});
-
-      if(existingDevice){
-        throw new Error('device already exists');
-      }
-
+  
+      const verificationPromise = new Promise<boolean>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Device verification timeout'));
+        }, 50000);
+  
+        const requestTopic = `verify_device_${createDeviceDto.deviceMac}`;
+        const responseTopic = `verified_device_${createDeviceDto.deviceMac}`;
+        
+        const subscription = this.mqttService.subscribe(responseTopic).subscribe({
+          next: (response) => {
+            if (response === 'verified') {
+              clearTimeout(timeoutId);
+              subscription.unsubscribe();
+              resolve(true);
+            }
+          },
+          error: (error) => {
+            clearTimeout(timeoutId);
+            subscription.unsubscribe();
+            reject(new Error('Device verification failed'));
+          },
+          complete: () => {
+            clearTimeout(timeoutId);
+            subscription.unsubscribe();
+          }
+        });
+  
+        this.mqttService.publish(requestTopic, 'verify');
+      });
+  
+      await verificationPromise;
+      
       const device = new this.deviceModel(createDeviceDto);
       return await device.save();
-    }
-    catch(error){
-      throw new Error(`Failed to create device : ${error.message}`);
+    } catch (error) {
+      throw new Error(`Failed to create device: ${error.message}`);
     }
   }
 
@@ -38,15 +67,17 @@ export class DevicesService {
     try {
       const device = await this.deviceModel.findById(deviceId);
       const user = await this.userModel.findById(userId);
-
+  
       if (!device || !user) {
         throw new NotFoundException('Device or User not found');
       }
+  
       if (!device.users.includes(new Types.ObjectId(userId))) {
         device.users.push(new Types.ObjectId(userId));
+        await this.mqttService.publish(`import_fingerprint_${device.deviceMac}`, String(user._id));
         await device.save();
       }
-
+  
       return device;
     } catch (error) {
       throw new Error(`Failed to add user to device: ${error.message}`);

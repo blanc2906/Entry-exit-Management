@@ -1,23 +1,35 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { Injectable, Logger } from '@nestjs/common';
+import { ClientProxy, ClientProxyFactory, Transport } from '@nestjs/microservices';
+import { Observable } from 'rxjs';
 
 @Injectable()
 export class MqttService {
   private readonly logger = new Logger(MqttService.name);
+  private client: ClientProxy;
+
+  constructor() {
+    this.client = ClientProxyFactory.create({
+      transport: Transport.MQTT,
+      options: {
+        url: process.env.MQTT_URL,
+        username: process.env.MQTT_USERNAME,
+        password: process.env.MQTT_PASSWORD,
+        protocol: 'mqtts',
+        protocolVersion: 4,
+        rejectUnauthorized: false,
+      },
+    });
+  }
+
   onModuleInit() {
     this.logger.log('MQTT Service has been initialized.');
   }
 
-  constructor(
-    @Inject('MQTT_CLIENT') private readonly client: ClientProxy,
-  ) {}
-
-  async publish(topic: string, message: string) {
-    try {
-      await this.client.emit(topic, message);
-    } catch (error) {
-      throw new Error('MQTT publish failed');
-    }
+  async publish(topic: string, message: any) {
+    return this.client.emit(topic, message);
   }
 
+  subscribe(topic: string): Observable<any> {
+    return this.client.emit(topic, {});
+  }
 } 

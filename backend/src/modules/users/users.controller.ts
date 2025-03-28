@@ -1,4 +1,4 @@
-import { Body, Controller, Logger, Post, Param } from "@nestjs/common";
+import { Body, Controller, Logger, Post, Param, Get } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 
@@ -35,6 +35,13 @@ export class UsersController {
     @Body('fingerTemplate') fingerTemplate: string,
   ) {
     return await this.usersService.addFingerprint(userId, fingerId, fingerTemplate);
+  }
+
+  @Get(':userId/get-finger-data')
+  addUserToDevice(
+    @Param('userId') userId: string,
+  ) {
+    return this.usersService.getUserFingerprint(userId);
   }
 
 }
