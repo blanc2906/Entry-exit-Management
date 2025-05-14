@@ -1,6 +1,8 @@
 import { Body, Controller, Logger, Post, Param, Get } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
+import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
+import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
 
 
 
@@ -11,12 +13,6 @@ export class UsersController {
   constructor( 
     private readonly usersService : UsersService,
   ) {}
-
-  @Post('test')
-  async test() {
-    this.logger.log('Test');
-    await this.usersService.test();
-  }
 
   @Post('create-user')
   async createUser(@Body() createUserDto : CreateUserDto){
@@ -29,12 +25,8 @@ export class UsersController {
   }
 
   @Post('add-fingerprint')
-  async addFingerprint(
-    @Body('userId') userId: string,
-    @Body('fingerId') fingerId: string,
-    @Body('fingerTemplate') fingerTemplate: string,
-  ) {
-    return await this.usersService.addFingerprint(userId, fingerId, fingerTemplate);
+  async addFingerprint(@Body() addFingerprintDto : AddFingerprintDto) {
+    return await this.usersService.addFingerprint(addFingerprintDto);
   }
 
   @Get(':userId/get-finger-data')
@@ -42,6 +34,15 @@ export class UsersController {
     @Param('userId') userId: string,
   ) {
     return this.usersService.getUserFingerprint(userId);
+  }
+  
+  @Post('request-add-cardNumber')
+  async requestAddCardNumber(@Body('userId') userId: string) {
+    await this.usersService.requestAddCardNumber(userId);
+  }
+  @Post('add-cardNumber')
+  async addCardNumber(@Body() addCardNumberDto : AddCardNumberDto) {
+    return await this.usersService.addCardNumber(addCardNumberDto);
   }
 
 }

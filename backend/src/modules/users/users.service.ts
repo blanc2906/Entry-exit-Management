@@ -1,10 +1,13 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { Model } from "mongoose";
 import { User, UserDocument } from "src/schema/user.schema";
 import { CreateUserDto } from "./dto/create-user.dto";
-import { find } from "rxjs";
 import { InjectModel } from "@nestjs/mongoose";
-import { MqttService } from "../mqtt/mqtt.service";
+import { ClientMqtt } from "@nestjs/microservices";
+import { REQUEST_ADD_CARDNUMBER, REQUEST_ADD_FINGERPRINT } from "src/shared/constants/mqtt.constant";
+import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
+import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
+
 
 @Injectable()
 export class UsersService {
@@ -12,7 +15,8 @@ export class UsersService {
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
 
-    private readonly mqttService : MqttService
+    @Inject('MQTT_CLIENT')
+    private readonly mqttClient: ClientMqtt
   ) {}
 
   async createUser(createUserDto : CreateUserDto) : Promise<UserDocument> {
@@ -56,18 +60,18 @@ export class UsersService {
     }
   }
   async requestAddFingerprint(userId: string){
-    await this.mqttService.publish('add_fingerprint', userId);
+    await this.mqttClient.emit(REQUEST_ADD_FINGERPRINT, userId);
   }
-  async addFingerprint(userId: string, fingerId: string, fingerTemplate: string): Promise<UserDocument> {
+  async addFingerprint(addFingerprintDto : AddFingerprintDto): Promise<UserDocument> {
     try {
-      const user = await this.userModel.findById(userId);
+      const user = await this.userModel.findById(addFingerprintDto.userId);
       
       if (!user) {
         throw new Error('User not found');
       }
 
-      user.fingerId = fingerId;
-      user.fingerTemplate = fingerTemplate;
+      user.fingerId = addFingerprintDto.fingerId;
+      user.fingerTemplate = addFingerprintDto.fingerTemplate;
       user.updatedAt = new Date();
 
       return await user.save();
@@ -76,10 +80,6 @@ export class UsersService {
     }
   }
 
-  async test(){
-    await this.mqttService.publish('test', 'test');
-
-  }
   async getUserFingerprint(userId: string): Promise<any> {
     try {
       const user = await this.userModel.findById(userId);
@@ -96,5 +96,43 @@ export class UsersService {
     } catch (error) {
       throw new Error(`Failed to get user fingerprint: ${error.message}`);
     }
+  }
+
+  async getUserByFingerId(fingerId: string): Promise<UserDocument> {
+    const user = await this.userModel.findOne({ fingerId });
+    if (!user) {
+      throw new Error('User not found');
+    }
+    return user;
+  }
+
+  async requestAddCardNumber(userId : string){
+    await this.mqttClient.emit(REQUEST_ADD_CARDNUMBER, userId);
+
+  }
+
+  async addCardNumber(addCardNumberDto : AddCardNumberDto): Promise<UserDocument> {
+    try {
+      const user = await this.userModel.findById(addCardNumberDto.userId);
+      
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      user.cardNumber = addCardNumberDto.cardNumber;
+      user.updatedAt = new Date();
+
+      return await user.save();
+    } catch (error) {
+      throw new Error(`Failed to add cardnumber: ${error.message}`);
+    }
+  }
+
+  async getUserByCardNumber(cardNumber: string): Promise<UserDocument> {  
+    const user = await this.userModel.findOne({ cardNumber });
+    if (!user) {
+      throw new Error('User not found');
+    }
+    return user;
   }
 }

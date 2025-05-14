@@ -39,6 +39,9 @@ export class User {
     @Prop({type : [{type : Types.ObjectId, ref : 'Device'}]})
     devices: Types.ObjectId[];
 
+    @Prop({type : [{type : Types.ObjectId, ref : 'History'}]})
+    history : Types.ObjectId[];
+
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

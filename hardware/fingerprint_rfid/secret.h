@@ -2,8 +2,8 @@
 
 #define SECRET
 
-const char WIFI_SSID[] = "Tang 3_2.4Ghz";
-const char WIFI_PASSWORD[] = "123456789";
+const char WIFI_SSID[] = "Hust_B1";
+const char WIFI_PASSWORD[] = "";
 const char CERT[] = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
@@ -40,6 +40,5 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 
 const char MQTT_BROKER_URL[] ="ec17fb6c1f804397b9afa141a1c705fb.s1.eu.hivemq.cloud";
 const int MQTT_PORT = 8883;
-const char INIT_TOPIC[] = "test_topic";
 const char USER_NAME[] = "langbui";
 const char PASSWORD[] = "29062003";

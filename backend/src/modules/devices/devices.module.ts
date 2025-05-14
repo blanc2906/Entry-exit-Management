@@ -7,7 +7,7 @@ import { User, UserSchema } from 'src/schema/user.schema';
 import { MqttModule } from '../mqtt/mqtt.module';
 
 @Module({
-  imports : [
+  imports: [
     MongooseModule.forFeature([
       {name: Device.name, schema: DeviceSchema},
       {name: User.name, schema: UserSchema}
