@@ -12,4 +12,8 @@ export class AddFingerprintDto {
     @IsString()
     @IsNotEmpty()
     fingerTemplate : string;
+
+    @IsString()
+    @IsNotEmpty()
+    deviceMac : string;
 }

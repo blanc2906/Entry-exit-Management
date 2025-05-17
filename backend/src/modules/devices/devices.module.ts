@@ -16,5 +16,6 @@ import { MqttModule } from '../mqtt/mqtt.module';
   ],
   controllers: [DevicesController],
   providers: [DevicesService],
+  exports: [DevicesService]
 })
 export class DevicesModule {}

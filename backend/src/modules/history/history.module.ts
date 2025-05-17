@@ -8,6 +8,7 @@ import { HistoryController } from './history.controller';
 import { UsersModule } from '../users/users.module';
 import { HistoryService } from './history.service';
 import { MqttModule } from '../mqtt/mqtt.module';
+import { DevicesModule } from '../devices/devices.module';
 
 @Module({
   imports : [
@@ -16,7 +17,8 @@ import { MqttModule } from '../mqtt/mqtt.module';
       {name: User.name, schema: UserSchema}
     ]),
     UsersModule,
-    MqttModule
+    MqttModule,
+    DevicesModule
   ],
   controllers: [HistoryController],
   providers: [HistoryService]

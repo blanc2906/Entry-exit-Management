@@ -20,8 +20,10 @@ export class UsersController {
   }
 
   @Post('request-add-fingerprint')
-  async requestAddFingerprint(@Body('userId') userId: string) {
-    await this.usersService.requestAddFingerprint(userId);
+  async requestAddFingerprint(
+    @Body('userId') userId: string, 
+    @Body('deviceId') deviceId: string) {
+    await this.usersService.requestAddFingerprint(userId, deviceId);
   }
 
   @Post('add-fingerprint')

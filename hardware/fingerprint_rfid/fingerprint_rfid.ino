@@ -10,12 +10,19 @@
 #include <MFRC522DriverSPI.h>
 #include <MFRC522DriverPinSimple.h>
 #include <MFRC522Debug.h>
+#include <WebServer.h>
+#include <EEPROM.h>
 #include "secret.h"
 #include "fp_lib.h"
 
+// EEPROM configs
+#define EEPROM_SIZE 96
+#define SSID_ADDR 0
+#define PASS_ADDR 32
+
 // Wifi configs
-const char *ssid = WIFI_SSID; 
-const char *password = WIFI_PASSWORD;
+const char *ssid = NULL; 
+const char *password = NULL;
 
 // MQTT configs
 const char *mqtt_broker = MQTT_BROKER_URL;
@@ -26,6 +33,7 @@ const char *ca_cert = CERT;
 
 WiFiClientSecure esp_client;
 PubSubClient mqtt_client(esp_client);
+WebServer server(80);
 
 HardwareSerial mySerial(2);
 Adafruit_Fingerprint finger(&mySerial);
@@ -34,85 +42,198 @@ MFRC522DriverPinSimple ss_pin(5);
 MFRC522DriverSPI driver{ss_pin}; 
 MFRC522 mfrc522{driver}; 
 
-
 uint8_t id;
 uint8_t lastUsedId = 0;
 String currentUserId = "";
 bool waitingForCardScan = false;
+bool isAPMode = false;
+
+String macAddress;
+String verifyDeviceTopic;
+String deleteFingerTopic;
+String addFingerTopic;
+String importFingerTopic;
+String addCardTopic;
+String fingerAttendanceTopic;
+String cardAttendanceTopic;
+String cardRegistrationResultTopic;
+String fingerprintDeletionResultTopic;
+
+// WiFi setup functions
+void saveCredentials(const String& ssid, const String& password) {
+  for (int i = 0; i < 32; i++) {
+    EEPROM.write(SSID_ADDR + i, i < ssid.length() ? ssid[i] : 0);
+    EEPROM.write(PASS_ADDR + i, i < password.length() ? password[i] : 0);
+  }
+  EEPROM.commit();
+}
+
+void loadCredentials(String &ssid, String &password) {
+  char ssidBuf[33];
+  char passBuf[33];
+  for (int i = 0; i < 32; i++) {
+    ssidBuf[i] = EEPROM.read(SSID_ADDR + i);
+    passBuf[i] = EEPROM.read(PASS_ADDR + i);
+  }
+  ssidBuf[32] = '\0';
+  passBuf[32] = '\0';
+
+  ssid = String(ssidBuf);
+  password = String(passBuf);
+}
+
+void clearCredentials() {
+  for (int i = 0; i < 64; i++) EEPROM.write(i, 0);
+  EEPROM.commit();
+}
+
+void handleRoot() {
+  String html = "<h1>Configure WiFi</h1><form method='POST' action='/setup'>";
+  html += "SSID: <input name='ssid' type='text'><br>";
+  html += "Password: <input name='password' type='password'><br>";
+  html += "<input type='submit'></form>";
+  server.send(200, "text/html", html);
+}
+
+void handleSetup() {
+  String ssid = server.arg("ssid");
+  String password = server.arg("password");
+
+  if (ssid.length() > 0 && password.length() > 0) {
+    saveCredentials(ssid, password);
+    server.send(200, "text/html", "<h1>Saved! Rebooting...</h1>");
+    delay(2000);
+    ESP.restart();
+  } else {
+    server.send(400, "text/html", "Invalid SSID or password");
+  }
+}
+
+void startAPMode() {
+  WiFi.softAP("ESP32_Config", "12345678");
+  Serial.println("Started Access Point: ESP32_Config");
+  Serial.println("IP Address: " + WiFi.softAPIP().toString());
+
+  server.on("/", handleRoot);
+  server.on("/setup", HTTP_POST, handleSetup);
+  server.begin();
+  
+  isAPMode = true;
+}
+
+bool connectToWiFi() {
+  String savedSSID, savedPassword;
+  loadCredentials(savedSSID, savedPassword);
+
+  if (savedSSID.length() > 0 && savedPassword.length() > 0) {
+    WiFi.begin(savedSSID.c_str(), savedPassword.c_str());
+    Serial.print("Connecting to WiFi");
+    unsigned long startAttempt = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+      Serial.print(".");
+      delay(500);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("\nConnected to WiFi!");
+      Serial.println("IP Address: " + WiFi.localIP().toString());
+      return true;
+    } else {
+      Serial.println("\nFailed to connect.");
+    }
+  } else {
+    Serial.println("No saved credentials.");
+  }
+
+  startAPMode();
+  return false;
+}
 
 void setup(){
   Serial.begin(9600);
-
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.println("Connecting to WiFi...");
-  }
-  Serial.println("Connected to the Wi-Fi network");
-
-  esp_client.setCACert(ca_cert);
-  mqtt_client.setServer(mqtt_broker, mqtt_port);
-  mqtt_client.setCallback(callback);
-
-  while (!mqtt_client.connected()) {
-    String client_id = "esp32-client-";
-    client_id += String(WiFi.macAddress());
-    Serial.printf("The client %s connects to the public MQTT broker\n", client_id.c_str());
-    if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
-      Serial.println("Public HiveMQ MQTT broker connected");
-    } else {
-      Serial.print("Failed with state ");
-      Serial.print(mqtt_client.state());
-      delay(2000);
-    }
-  }
-
-  String deviceMac = WiFi.macAddress();
-  deviceMac.replace(":", ""); 
-  String verifyTopic = "verify_device_" + deviceMac;
-  mqtt_client.subscribe(verifyTopic.c_str());
-  mqtt_client.subscribe("delete_fingerprint");
-  mqtt_client.subscribe("add_fingerprint");
-  mqtt_client.subscribe("attended_success");
-  mqtt_client.subscribe("import_fingerprint");
-  mqtt_client.subscribe("add_cardnumber");
-
-  while (!Serial); 
-  delay(100);
-
-  mySerial.begin(57600, SERIAL_8N1, 16, 17);
-
-  finger.begin(57600);
-  delay(5);
+  EEPROM.begin(EEPROM_SIZE);
+  delay(500);
   
-  mfrc522.PCD_Init();    
-  MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);	
+  Serial.println("Starting device initialization...");
+  
+  // Try to connect to WiFi with stored credentials
+  if (connectToWiFi()) {
+    macAddress = WiFi.macAddress();
 
-  if (finger.verifyPassword()) {
-    Serial.println("Found fingerprint sensor!");
-  } else {
-    Serial.println("Did not find fingerprint sensor :(");
-    while (1) { delay(1); }
+    deleteFingerTopic = "delete-fingerprint/" + macAddress;
+    addFingerTopic = "add-fingerprint/" + macAddress;
+    importFingerTopic = "import-fingerprint/" + macAddress;
+    addCardTopic = "add-cardnumber/" + macAddress;
+    String attendedSuccessTopic = "attended-success/" + macAddress;
+
+    fingerAttendanceTopic = "finger_attendance/" + macAddress;
+    cardAttendanceTopic = "card_attendance/" + macAddress;
+    cardRegistrationResultTopic = "card_registration_result/" + macAddress;
+    fingerprintDeletionResultTopic = "fingerprint_deletion_result/" + macAddress;
+    // Initialize MQTT only if WiFi is connected
+    esp_client.setCACert(ca_cert);
+    mqtt_client.setServer(mqtt_broker, mqtt_port);
+    mqtt_client.setCallback(callback);
+
+    while (!mqtt_client.connected()) {
+      String client_id = "esp32-client-";
+      client_id += String(WiFi.macAddress());
+      Serial.printf("The client %s connects to the public MQTT broker\n", client_id.c_str());
+      if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
+        Serial.println("Public HiveMQ MQTT broker connected");
+      } else {
+        Serial.print("Failed with state ");
+        Serial.print(mqtt_client.state());
+        delay(2000);
+      }
+    }
+
+    mqtt_client.subscribe(deleteFingerTopic.c_str());
+    mqtt_client.subscribe(addFingerTopic.c_str());
+    mqtt_client.subscribe(attendedSuccessTopic.c_str());
+    mqtt_client.subscribe(importFingerTopic.c_str());
+    mqtt_client.subscribe(addCardTopic.c_str());
+    
+    // Initialize fingerprint sensor
+    while (!Serial); 
+    delay(100);
+
+    mySerial.begin(57600, SERIAL_8N1, 16, 17);
+
+    finger.begin(57600);
+    delay(5);
+
+    if (finger.verifyPassword()) {
+      Serial.println("Found fingerprint sensor!");
+    } else {
+      Serial.println("Did not find fingerprint sensor :(");
+      // Continue anyway as we might just want to use RFID
+    }
+
+    Serial.println(F("Reading sensor parameters"));
+    finger.getParameters();
+    Serial.print(F("Status: 0x")); Serial.println(finger.status_reg, HEX);
+    Serial.print(F("Sys ID: 0x")); Serial.println(finger.system_id, HEX);
+    Serial.print(F("Capacity: ")); Serial.println(finger.capacity);
+    Serial.print(F("Security level: ")); Serial.println(finger.security_level);
+    Serial.print(F("Device address: ")); Serial.println(finger.device_addr, HEX);
+    Serial.print(F("Packet len: ")); Serial.println(finger.packet_len);
+    Serial.print(F("Baud rate: ")); Serial.println(finger.baud_rate);
+
+    finger.getTemplateCount();
+
+    if (finger.templateCount == 0) {
+      Serial.print("Sensor doesn't contain any fingerprint data. Please run the 'enroll' example.");
+    }
+    else {
+      Serial.print("Sensor contains "); Serial.print(finger.templateCount); Serial.println(" templates");
+    }
+    
+    // Initialize RFID reader
+    mfrc522.PCD_Init();    
+    MFRC522Debug::PCD_DumpVersionToSerial(mfrc522, Serial);
   }
-
-  Serial.println(F("Reading sensor parameters"));
-  finger.getParameters();
-  Serial.print(F("Status: 0x")); Serial.println(finger.status_reg, HEX);
-  Serial.print(F("Sys ID: 0x")); Serial.println(finger.system_id, HEX);
-  Serial.print(F("Capacity: ")); Serial.println(finger.capacity);
-  Serial.print(F("Security level: ")); Serial.println(finger.security_level);
-  Serial.print(F("Device address: ")); Serial.println(finger.device_addr, HEX);
-  Serial.print(F("Packet len: ")); Serial.println(finger.packet_len);
-  Serial.print(F("Baud rate: ")); Serial.println(finger.baud_rate);
-
-  finger.getTemplateCount();
-
-  if (finger.templateCount == 0) {
-    Serial.print("Sensor doesn't contain any fingerprint data. Please run the 'enroll' example.");
-  }
-  else {
-    Serial.print("Sensor contains "); Serial.print(finger.templateCount); Serial.println(" templates");
-  } 
+  // If WiFi connection failed, the device is already in AP mode
 }
 
 void callback(char *topic, byte *payload, unsigned int length) {
@@ -126,20 +247,7 @@ void callback(char *topic, byte *payload, unsigned int length) {
   
   Serial.println(message);
 
-  if (strstr(topic, "verify_device_") == topic) {
-    String topicStr = String(topic);
-    String deviceMac = topicStr.substring(strlen("verify_device_"));
-    Serial.print("Received verify request for deviceMac: ");
-    Serial.println(deviceMac);
-
-    String response = "{\"deviceMac\":\"" + deviceMac + "\",\"verified\":true}";
-    String responseTopic = "verified_device";
-    mqtt_client.publish(responseTopic.c_str(), response.c_str());
-    Serial.print("Published verification response to topic: ");
-    Serial.println(responseTopic);
-  }
-
-  if (strcmp(topic, "delete_fingerprint") == 0) {
+  if (strcmp(topic, deleteFingerTopic.c_str()) == 0) {
     Serial.println("Starting fingerprint deletion process...");
     
     // Convert message to integer for finger ID
@@ -169,22 +277,9 @@ void callback(char *topic, byte *payload, unsigned int length) {
     }
   }
 
-  if (strcmp(topic, "add_fingerprint") == 0) {
+  if (strcmp(topic, addFingerTopic.c_str()) == 0) {
     Serial.println("Starting enrollment process...");
-    
-    // Parse the JSON message
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, message);
-    
-    if (error) {
-      Serial.print("JSON parsing failed: ");
-      Serial.println(error.c_str());
-      return;
-    }
-    
-    // Extract userId from the data field
-    currentUserId = doc["data"].as<String>();
-    Serial.print("User ID to enroll: ");
+    currentUserId = String(message);
     Serial.println(currentUserId);
     
     uint8_t newId = enrollFingerprint();
@@ -197,39 +292,16 @@ void callback(char *topic, byte *payload, unsigned int length) {
     }
   }
 
-  if (strcmp(topic, "import_fingerprint") == 0) {
+  if (strcmp(topic, importFingerTopic.c_str()) == 0) {
     Serial.println("Starting fingerprint import process...");
-    
-    // Parse the JSON message
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, message);
-    
-    if (error) {
-      Serial.print("JSON parsing failed: ");
-      Serial.println(error.c_str());
-      return;
-    }
-    
-    // Extract userId from the data field
-    currentUserId = doc["data"].as<String>();
+    currentUserId = String(message);
     Serial.print("User ID to import: ");
     Serial.println(currentUserId);
     getTemplateFromServerWithUserId(currentUserId);
   }
   
-  if (strcmp(topic, "add_cardnumber") == 0) {
-    // Parse the JSON message
-    DynamicJsonDocument doc(1024);
-    DeserializationError error = deserializeJson(doc, message);
-    
-    if (error) {
-      Serial.print("JSON parsing failed: ");
-      Serial.println(error.c_str());
-      return;
-    }
-    
-    // Extract userId from the data field
-    currentUserId = doc["data"].as<String>();
+  if (strcmp(topic, addCardTopic.c_str()) == 0)  {
+    currentUserId = String(message);
     if (currentUserId.length() > 0) {
       Serial.print("User ID to enroll: ");
       Serial.println(currentUserId);
@@ -242,21 +314,17 @@ void callback(char *topic, byte *payload, unsigned int length) {
 }
 
 void reconnect() {
-  while (!mqtt_client.connected()) {
+  while (!mqtt_client.connected() && !isAPMode) {
     String client_id = "esp32-client-";
     client_id += String(WiFi.macAddress());
     Serial.printf("Reconnecting to MQTT as %s\n", client_id.c_str());
     if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
       Serial.println("Reconnected to MQTT broker");
-      String deviceMac = WiFi.macAddress();
-      deviceMac.replace(":", ""); 
-      String verifyTopic = "verify_device_" + deviceMac;
-      mqtt_client.subscribe(verifyTopic.c_str());
-      mqtt_client.subscribe("delete_fingerprint");
-      mqtt_client.subscribe("add_fingerprint"); 
-      mqtt_client.subscribe("attended_success");
-      mqtt_client.subscribe("import_fingerprint");
-      mqtt_client.subscribe("add_cardnumber");
+      mqtt_client.subscribe(deleteFingerTopic.c_str());
+      mqtt_client.subscribe(addFingerTopic.c_str());
+      mqtt_client.subscribe(("attended-success/" + macAddress).c_str());
+      mqtt_client.subscribe(importFingerTopic.c_str());
+      mqtt_client.subscribe(addCardTopic.c_str());
     } else {
       Serial.print("Failed to connect, state: ");
       Serial.println(mqtt_client.state());
@@ -335,7 +403,7 @@ uint8_t getFingerprintID() {
 
   char fingerIDStr[5];
   itoa(finger.fingerID, fingerIDStr, 10);
-  mqtt_client.publish("finger_attendance", fingerIDStr);
+  mqtt_client.publish(fingerAttendanceTopic.c_str(), fingerIDStr);
 
   return finger.fingerID;
 }
@@ -630,7 +698,7 @@ uint8_t uploadFingerprintTemplate(uint16_t id, const char* hexData) {
 }
 
 void sendFingerDataToServer(String userId, uint8_t fingerId) {
-  const char *server_url = "http://192.168.12.203:3000/users/add-fingerprint";
+  const char *server_url = "http://192.168.100.82:3000/users/add-fingerprint";
   HTTPClient http;
   
   http.begin(server_url);
@@ -644,11 +712,11 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
     return;
   }
   
-  // Create JSON object with the exact fields expected by the server
   StaticJsonDocument<4096> doc; 
   doc["userId"] = userId;
   doc["fingerId"] = String(fingerId);
   doc["fingerTemplate"] = fingerTemplate;
+  doc["deviceMac"] = macAddress;
   
   String requestBody;
   serializeJson(doc, requestBody);
@@ -656,8 +724,6 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
   Serial.println("Sending POST request to server...");
   Serial.print("Template length: ");
   Serial.println(fingerTemplate.length());
-  Serial.print("Request body: ");
-  Serial.println(requestBody);
   
   int httpResponseCode = http.POST(requestBody);
   
@@ -665,18 +731,10 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
     String response = http.getString();
     Serial.println("HTTP Response code: " + String(httpResponseCode));
     Serial.println("Response: " + response);
-    
-    if (httpResponseCode == 200) {
-      String successMsg = "{\"status\":\"success\",\"userId\":\"" + userId + "\",\"fingerId\":" + String(fingerId) + "}";
-      mqtt_client.publish("fingerprint_registration_result", successMsg.c_str());
-    } else {
-      String errorMsg = "{\"status\":\"error\",\"userId\":\"" + userId + "\",\"error\":\"" + String(httpResponseCode) + "\"}";
-      mqtt_client.publish("fingerprint_registration_result", errorMsg.c_str());
-    }
+    delay(3000);
   } else {
     Serial.println("HTTP Error: " + String(httpResponseCode));
-    String errorMsg = "{\"status\":\"error\",\"userId\":\"" + userId + "\",\"error\":\"" + String(httpResponseCode) + "\"}";
-    mqtt_client.publish("fingerprint_registration_result", errorMsg.c_str());
+    delay(3000);
   }
   
   http.end();
@@ -685,7 +743,7 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
 void getTemplateFromServerWithUserId(String userId) {
   HTTPClient http;
   
-  String url = "192.168.12.203:3000/users/" + userId + "/get-finger-data";
+  String url = "http://192.168.100.82:3000/users/" + userId + "/get-finger-data";
   
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
@@ -739,7 +797,7 @@ void getTemplateFromServerWithUserId(String userId) {
 
 void sendCardNumberToServer(String userId, String cardNumber) {
   HTTPClient http;
-  const char *server_url = "http://192.168.12.203:3000/users/add-cardNumber";
+  const char *server_url = "http://192.168.100.82:3000/users/add-cardNumber";
   http.begin(server_url);
   http.addHeader("Content-Type", "application/json");
   
@@ -777,13 +835,37 @@ void sendCardNumberToServer(String userId, String cardNumber) {
 }
 
 void loop() {
-  if (!WiFi.isConnected()) {
+  if (isAPMode) {
+    // Handle web server in AP mode
+    server.handleClient();
+    return;
+  }
+  
+  if (!WiFi.isConnected()) {  
     Serial.println("WiFi disconnected, reconnecting...");
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
+    String savedSSID, savedPassword;
+    loadCredentials(savedSSID, savedPassword);
+  
+    if (savedSSID.length() > 0 && savedPassword.length() > 0) {
+      WiFi.begin(savedSSID.c_str(), savedPassword.c_str());
+      unsigned long startAttempt = millis();
+      while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+      Serial.print(".");
       delay(500);
     }
+    
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("\nFailed to reconnect, switching to AP mode");
+        startAPMode();
+        return;
+      }
+    
     Serial.println("WiFi reconnected");
+    } else {
+      Serial.println("No saved credentials, switching to AP mode");
+      startAPMode();
+      return;
+    }
   }
 
   if (!mqtt_client.connected()) {
@@ -810,7 +892,7 @@ void loop() {
       sendCardNumberToServer(currentUserId, uidString);
     } else {
       Serial.println("Publishing to card_attendance topic");  // Fixed missing double quote
-      mqtt_client.publish("card_attendance", uidString.c_str());
+      mqtt_client.publish(cardAttendanceTopic.c_str(), uidString.c_str());
     }
     
     mfrc522.PICC_HaltA();

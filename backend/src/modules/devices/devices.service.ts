@@ -30,6 +30,15 @@ export class DevicesService {
     private readonly userModel: Model<UserDocument>,
   ){}
 
+  async getDeviceByMac(deviceMac: string): Promise<DeviceDocument> {
+    try {
+      return await this.deviceModel.findOne({deviceMac});
+    }
+    catch (error) {
+      throw new Error(`Failed to find device: ${error.message}`);
+    }
+  }
+
     async createDevice(createDeviceDto: CreateDeviceDto) {
     const { deviceMac, description } = createDeviceDto;
 
@@ -150,7 +159,7 @@ export class DevicesService {
       }
 
       device.users.splice(userIndex, 1);
-      this.mqttClient.emit(DELETE_FINGERPRINT, user.fingerId);
+      //this.mqttClient.emit(DELETE_FINGERPRINT, user.fingerId);
       await device.save();
 
       return device;

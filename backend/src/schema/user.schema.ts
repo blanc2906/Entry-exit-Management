@@ -21,9 +21,6 @@ export class User {
     @Prop({unique: true, sparse: true})
     email : string;
 
-    @Prop({unique: true, sparse: true})
-    fingerId: string;
-
     @Prop({default : null})
     fingerTemplate: string;
 

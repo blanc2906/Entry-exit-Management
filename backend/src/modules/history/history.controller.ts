@@ -5,6 +5,7 @@ import { UserDocument } from "src/schema/user.schema";
 import { HistoryDocument } from "src/schema/history.schema";
 import { HistoryService } from "./history.service";
 import { ATTENDANCE_NOTIFICATION } from "src/shared/constants/mqtt.constant";
+import { DevicesService } from "../devices/devices.service";
 
 
 @Controller('history')
@@ -14,13 +15,20 @@ export class HistoryController {
     constructor(
         private readonly usersService: UsersService,
         private readonly historyService: HistoryService,
+        private readonly DeviceService: DevicesService,
          @Inject('MQTT_CLIENT') private readonly mqttClient: ClientMqtt
     ){}
 
-    @MessagePattern('finger_attendance')
-    async handleFingerAttendance(@Payload() data: string, @Ctx() context : MqttContext) {
-        const user = await this.usersService.getUserByFingerId(data);
-        await this.mqttClient.emit(ATTENDANCE_NOTIFICATION,user.name) 
+    @MessagePattern('finger_attendance/#')
+    async handleFingerAttendance(@Payload() data: string, @Ctx() context: MqttContext) {
+        const topic = context.getTopic();
+        const deviceMac = topic.split('/')[1];
+        console.log(deviceMac);
+        const device = await this.DeviceService.getDeviceByMac(deviceMac);
+        console.log(device._id.toString());
+        
+        const user = await this.usersService.getUserByFingerId(data,device._id.toString());
+        await this.mqttClient.emit(ATTENDANCE_NOTIFICATION, user.name);
 
         return this.historyService.processAttendance(user._id.toString());
     }
