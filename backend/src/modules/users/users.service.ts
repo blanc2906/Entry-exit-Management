@@ -109,8 +109,11 @@ export class UsersService {
       if (!user.devices.includes(device._id as Types.ObjectId)) {
         user.devices.push(device._id as Types.ObjectId);
       }
+      
+      // Add user to device's users array if not already present
       if (!device.users.includes(user._id as Types.ObjectId)) {
         device.users.push(user._id as Types.ObjectId);
+        await device.save(); // Save the device document with the updated users array
       }
 
       return await user.save();

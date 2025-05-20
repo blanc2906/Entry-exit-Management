@@ -287,11 +287,47 @@ void callback(char *topic, byte *payload, unsigned int length) {
     //}
   }
 
-  if (strcmp(topic, deleteFingerTopic.c_str()) == 0) {
+    if (strcmp(topic, deleteFingerTopic.c_str()) == 0) {
     Serial.println("Starting fingerprint deletion process...");
     
-    // Convert message to integer for finger ID
-    uint8_t fingerId = atoi(message);
+    // Parse JSON message
+    DynamicJsonDocument outerDoc(512);
+    DeserializationError outerError = deserializeJson(outerDoc, message);
+    
+    if (outerError) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(outerError.c_str());
+      return;
+    }
+    
+    uint8_t fingerId = 0;
+    
+    // Check if this is a NestJS format with pattern and data fields
+    if (outerDoc.containsKey("data")) {
+      // Get the data string
+      const char* dataString = outerDoc["data"];
+      
+      // Parse the inner JSON in the data field
+      DynamicJsonDocument innerDoc(256);
+      DeserializationError innerError = deserializeJson(innerDoc, dataString);
+      
+      if (innerError) {
+        Serial.print("Inner JSON parsing failed: ");
+        Serial.println(innerError.c_str());
+        return;
+      }
+      
+      // Extract fingerId from the inner JSON
+      if (innerDoc.containsKey("fingerId")) {
+        fingerId = innerDoc["fingerId"].as<uint8_t>();
+      }
+    } else if (outerDoc.containsKey("fingerId")) {
+      // Direct format
+      fingerId = outerDoc["fingerId"].as<uint8_t>();
+    } else {
+      // Legacy format - try to convert the whole message to an integer
+      fingerId = atoi(message);
+    }
     
     if (fingerId > 0) {
       Serial.print("Deleting fingerprint ID #");
@@ -302,15 +338,9 @@ void callback(char *topic, byte *payload, unsigned int length) {
       if (result == FINGERPRINT_OK) {
         Serial.print("Successfully deleted fingerprint ID #");
         Serial.println(fingerId);
-        
-        String successMsg = "{\"status\":\"success\",\"fingerId\":" + String(fingerId) + "}";
-        mqtt_client.publish("fingerprint_deletion_result", successMsg.c_str());
       } else {
         Serial.print("Failed to delete fingerprint ID #");
         Serial.println(fingerId);
-        
-        String errorMsg = "{\"status\":\"error\",\"fingerId\":" + String(fingerId) + ",\"errorCode\":" + String(result) + "}";
-        mqtt_client.publish("fingerprint_deletion_result", errorMsg.c_str());
       }
     } else {
       Serial.println("Invalid fingerprint ID received");
