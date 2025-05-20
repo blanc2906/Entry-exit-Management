@@ -52,4 +52,9 @@ export class DevicesController implements OnModuleInit {
   syncAllUser(@Param('deviceId') deviceId: string) {
     return this.devicesService.syncAllUser(deviceId);
   }
+
+  @Post(':deviceId/delete-all-users')
+  deleteAllUser(@Param('deviceId') deviceId : string){
+    return this.devicesService.deleteAllUser(deviceId);
+  }
 }

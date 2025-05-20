@@ -20,8 +20,9 @@ export class HistoryController {
     ){}
 
     @MessagePattern('finger_attendance/#')
-    async handleFingerAttendance(@Payload() data: string, @Ctx() context: MqttContext) {
+    async handleFingerAttendance(@Payload() data: number, @Ctx() context: MqttContext) {
         const topic = context.getTopic();
+        console.log(data);
         const deviceMac = topic.split('/')[1];
         console.log(deviceMac);
         const device = await this.DeviceService.getDeviceByMac(deviceMac);

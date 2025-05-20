@@ -51,6 +51,7 @@ bool isAPMode = false;
 String macAddress;
 String verifyDeviceTopic;
 String deleteFingerTopic;
+String emptyDatabaseTopic;
 String addFingerTopic;
 String importFingerTopic;
 String addCardTopic;
@@ -160,7 +161,9 @@ void setup(){
   if (connectToWiFi()) {
     macAddress = WiFi.macAddress();
 
+    verifyDeviceTopic = "verify_device_" + macAddress;
     deleteFingerTopic = "delete-fingerprint/" + macAddress;
+    emptyDatabaseTopic = "empty-database/" + macAddress;
     addFingerTopic = "add-fingerprint/" + macAddress;
     importFingerTopic = "import-fingerprint/" + macAddress;
     addCardTopic = "add-cardnumber/" + macAddress;
@@ -188,7 +191,9 @@ void setup(){
       }
     }
 
+    mqtt_client.subscribe(verifyDeviceTopic.c_str());
     mqtt_client.subscribe(deleteFingerTopic.c_str());
+    mqtt_client.subscribe(emptyDatabaseTopic.c_str());
     mqtt_client.subscribe(addFingerTopic.c_str());
     mqtt_client.subscribe(attendedSuccessTopic.c_str());
     mqtt_client.subscribe(importFingerTopic.c_str());
@@ -247,6 +252,41 @@ void callback(char *topic, byte *payload, unsigned int length) {
   
   Serial.println(message);
 
+  if (strcmp(topic, verifyDeviceTopic.c_str()) == 0) {
+    Serial.println("Received device verification request");
+    
+    // Parse the JSON message
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, message);
+    
+    if (error) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+      return;
+    }
+
+    
+    //if (doc.containsKey("deviceMac") && doc.containsKey("action")) {
+      String deviceMac = doc["deviceMac"].as<String>();
+      String action = doc["action"].as<String>();
+      
+      //if (deviceMac == macAddress && action == "verify") {
+        Serial.println("Valid verification request for this device");
+        
+        // Respond with verification confirmation
+        StaticJsonDocument<256> responseDoc;
+        responseDoc["deviceMac"] = macAddress;
+        responseDoc["verified"] = true;
+   
+        String responseMsg;
+        serializeJson(responseDoc, responseMsg);
+        
+        mqtt_client.publish("verified_device", responseMsg.c_str());
+        Serial.println("Verification response sent");
+      //}
+    //}
+  }
+
   if (strcmp(topic, deleteFingerTopic.c_str()) == 0) {
     Serial.println("Starting fingerprint deletion process...");
     
@@ -278,27 +318,101 @@ void callback(char *topic, byte *payload, unsigned int length) {
   }
 
   if (strcmp(topic, addFingerTopic.c_str()) == 0) {
-    Serial.println("Starting enrollment process...");
+  Serial.println("Starting enrollment process...");
+  
+  // Parse JSON message
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, message);
+  
+  if (error) {
+    Serial.print("JSON parsing failed: ");
+    Serial.println(error.c_str());
+    // Fallback to using the raw message if parsing fails
     currentUserId = String(message);
-    Serial.println(currentUserId);
-    
-    uint8_t newId = enrollFingerprint();
-
-    if (newId > 0) {
-      Serial.printf("Successfully enrolled fingerprint for ID #%d\n", newId);
-      sendFingerDataToServer(currentUserId, newId);
+  } else {
+    // Check if message has data field (NestJS MQTT format)
+    if (doc.containsKey("data")) {
+      currentUserId = doc["data"].as<String>();
+      Serial.print("Extracted userId from JSON data field: ");
+      Serial.println(currentUserId);
     } else {
-      Serial.println("Enrollment failed");
+      // Use raw message if no data field
+      currentUserId = String(message);
     }
   }
+  
+  uint8_t newId = enrollFingerprint();
+
+  if (newId > 0) {
+    Serial.printf("Successfully enrolled fingerprint for ID #%d\n", newId);
+    sendFingerDataToServer(currentUserId, newId);
+  } else {
+    Serial.println("Enrollment failed");
+  }
+}
 
   if (strcmp(topic, importFingerTopic.c_str()) == 0) {
-    Serial.println("Starting fingerprint import process...");
-    currentUserId = String(message);
-    Serial.print("User ID to import: ");
-    Serial.println(currentUserId);
-    getTemplateFromServerWithUserId(currentUserId);
+  Serial.println("Starting fingerprint import process...");
+  
+  // Parse JSON data from message
+  DynamicJsonDocument outerDoc(512);
+  DeserializationError outerError = deserializeJson(outerDoc, message);
+  
+  if (outerError) {
+    Serial.print("JSON parsing failed: ");
+    Serial.println(outerError.c_str());
+    return;
   }
+  
+  // Check if this is a NestJS format with pattern and data fields
+  if (outerDoc.containsKey("data")) {
+    // Get the data string
+    const char* dataString = outerDoc["data"];
+    
+    // Parse the inner JSON in the data field
+    DynamicJsonDocument innerDoc(256);
+    DeserializationError innerError = deserializeJson(innerDoc, dataString);
+    
+    if (innerError) {
+      Serial.print("Inner JSON parsing failed: ");
+      Serial.println(innerError.c_str());
+      return;
+    }
+    
+    // Now extract userId and fingerId from the inner JSON
+    if (innerDoc.containsKey("userId") && innerDoc.containsKey("fingerId")) {
+      currentUserId = innerDoc["userId"].as<String>();
+      uint8_t fingerId = innerDoc["fingerId"].as<uint8_t>();
+      
+      Serial.print("User ID to import: ");
+      Serial.println(currentUserId);
+      Serial.print("Finger ID to use: ");
+      Serial.println(fingerId);
+      
+      // Call getTemplateFromServerWithUserId with the fingerId
+      getTemplateFromServerWithUserId(currentUserId, fingerId);
+      return;
+    }
+  }
+  if (outerDoc.containsKey("userId") && outerDoc.containsKey("fingerId")) {
+    currentUserId = outerDoc["userId"].as<String>();
+    uint8_t fingerId = outerDoc["fingerId"].as<uint8_t>();
+    
+    Serial.print("User ID to import (direct format): ");
+    Serial.println(currentUserId);
+    Serial.print("Finger ID to use: ");
+    Serial.println(fingerId);
+    
+    // Call getTemplateFromServerWithUserId with the fingerId
+    getTemplateFromServerWithUserId(currentUserId, fingerId);
+  } else {
+    // Last resort, try using the whole message as userId (legacy format)
+    currentUserId = String(message);
+    Serial.print("User ID to import (legacy format): ");
+    Serial.println(currentUserId);
+    getTemplateFromServerWithUserId(currentUserId, 0);  // 0 means auto-assign fingerId
+  }
+}
   
   if (strcmp(topic, addCardTopic.c_str()) == 0)  {
     currentUserId = String(message);
@@ -311,6 +425,10 @@ void callback(char *topic, byte *payload, unsigned int length) {
       Serial.println("No valid user ID found in message");
     }
   }
+
+  if (strcmp(topic, emptyDatabaseTopic.c_str()) == 0) {
+    deleteAllModels();
+  }
 }
 
 void reconnect() {
@@ -320,7 +438,9 @@ void reconnect() {
     Serial.printf("Reconnecting to MQTT as %s\n", client_id.c_str());
     if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
       Serial.println("Reconnected to MQTT broker");
+      mqtt_client.subscribe(verifyDeviceTopic.c_str());
       mqtt_client.subscribe(deleteFingerTopic.c_str());
+      mqtt_client.subscribe(emptyDatabaseTopic.c_str());
       mqtt_client.subscribe(addFingerTopic.c_str());
       mqtt_client.subscribe(("attended-success/" + macAddress).c_str());
       mqtt_client.subscribe(importFingerTopic.c_str());
@@ -646,7 +766,8 @@ void printHex(int num, int precision) {
   Serial.print(tmp);
 }
 
-uint8_t uploadFingerprintTemplate(uint16_t id, const char* hexData) {
+uint8_t uploadFingerprintTemplate(const char* hexData, uint16_t id) {
+  
   uint8_t p = finger.setModel();
   switch (p) {
     case FINGERPRINT_OK:
@@ -714,7 +835,7 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
   
   StaticJsonDocument<4096> doc; 
   doc["userId"] = userId;
-  doc["fingerId"] = String(fingerId);
+  doc["fingerId"] = fingerId;
   doc["fingerTemplate"] = fingerTemplate;
   doc["deviceMac"] = macAddress;
   
@@ -740,7 +861,7 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
   http.end();
 }
 
-void getTemplateFromServerWithUserId(String userId) {
+void getTemplateFromServerWithUserId(String userId, uint16_t fingerId) {
   HTTPClient http;
   
   String url = "http://192.168.100.82:3000/users/" + userId + "/get-finger-data";
@@ -769,19 +890,18 @@ void getTemplateFromServerWithUserId(String userId) {
       return;
     }
     
-    if (doc.containsKey("fingerId") && doc.containsKey("templateData") && doc.containsKey("userId")) {
-      uint8_t fingerId = doc["fingerId"].as<uint8_t>();
+    if (doc.containsKey("templateData") && doc.containsKey("userId")) {
+
       const char* userId = doc["userId"];
       const char* templateData = doc["templateData"];
       
       Serial.print("Received template - Finger ID: ");
-      Serial.println(fingerId);
       Serial.print("User ID: ");
       Serial.println(userId);
       Serial.print("Template Data Length: ");
       Serial.println(strlen(templateData));
       
-      uploadFingerprintTemplate(fingerId, templateData);
+      uploadFingerprintTemplate(templateData,fingerId);
       
       
     } else {
@@ -793,6 +913,11 @@ void getTemplateFromServerWithUserId(String userId) {
   }
   
   http.end();
+}
+
+void deleteAllModels() {
+  finger.emptyDatabase();
+  Serial.println("Now database is empty :)");
 }
 
 void sendCardNumberToServer(String userId, String cardNumber) {

@@ -8,6 +8,7 @@ import { User, UserDocument } from 'src/schema/user.schema';
 import { DELETE_FINGERPRINT, IMPORT_FINGERPRINT } from 'src/shared/constants/mqtt.constant';
 import { ClientProxy } from '@nestjs/microservices';
 import { EventPattern } from '@nestjs/microservices';
+import { UserDevice, UserDeviceDocument } from 'src/schema/user-device.schema';
 
 @Injectable()
 export class DevicesService {
@@ -28,6 +29,8 @@ export class DevicesService {
     private readonly deviceModel: Model<DeviceDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(UserDevice.name)
+    private readonly userDeviceModel : Model<UserDeviceDocument>
   ){}
 
   async getDeviceByMac(deviceMac: string): Promise<DeviceDocument> {
@@ -108,7 +111,7 @@ export class DevicesService {
   }
 
   // Phương thức addUserToDevice giữ nguyên
-  async addUserToDevice(deviceId: string, userId: string) {
+   async addUserToDevice(deviceId: string, userId: string) {
     try {
       const [device, user] = await Promise.all([
         this.deviceModel.findById(deviceId),
@@ -125,7 +128,32 @@ export class DevicesService {
       const userObjectId = new Types.ObjectId(userId);
       if (!device.users.some(id => id.equals(userObjectId))) {
         device.users.push(userObjectId);
-        this.mqttClient.emit(IMPORT_FINGERPRINT, String(user._id));
+        
+        // Generate a new fingerId for this user on this device
+        // Get the last used fingerId or start with 1
+        let newFingerId = 1;
+        const lastUserDevice = await this.userDeviceModel
+          .findOne({ device: device._id })
+          .sort({ fingerId: -1 });
+          
+        if (lastUserDevice) {
+          newFingerId = lastUserDevice.fingerId + 1;
+        }
+        
+        // Create the UserDevice relationship with the fingerId
+        const userDevice = new this.userDeviceModel({
+          user: userObjectId,
+          device: device._id,
+          fingerId: newFingerId
+        });
+        await userDevice.save();
+        
+        // Send the userId and fingerId to the device
+        this.mqttClient.emit(`import-fingerprint/${device.deviceMac}`, JSON.stringify({
+          userId: String(user._id),
+          fingerId: newFingerId
+        }));
+        
         await device.save();
       }
 
@@ -158,8 +186,24 @@ export class DevicesService {
         throw new NotFoundException('User not found in device');
       }
 
+      // Find the UserDevice relationship to get the fingerId
+      const userDevice = await this.userDeviceModel.findOne({
+        user: userObjectId,
+        device: device._id
+      });
+
+      if (userDevice) {
+        // Send delete fingerprint command to device with the correct fingerId
+        this.mqttClient.emit(`${DELETE_FINGERPRINT}/${device.deviceMac}`, JSON.stringify({
+          fingerId: userDevice.fingerId
+        }));
+        
+        // Remove the UserDevice relationship
+        await this.userDeviceModel.findByIdAndDelete(userDevice._id);
+      }
+
+      // Remove user from device's users array
       device.users.splice(userIndex, 1);
-      //this.mqttClient.emit(DELETE_FINGERPRINT, user.fingerId);
       await device.save();
 
       return device;
@@ -187,9 +231,32 @@ export class DevicesService {
       
       // Add each new user to the device
       for (const user of usersToAdd) {
+        // Generate a new fingerId for this user on this device
+        let newFingerId = 1;
+        const lastUserDevice = await this.userDeviceModel
+          .findOne({ device: device._id })
+          .sort({ fingerId: -1 });
+          
+        if (lastUserDevice) {
+          newFingerId = lastUserDevice.fingerId + 1;
+        }
+        
+        // Create the UserDevice relationship with the fingerId
+        const userDevice = new this.userDeviceModel({
+          user: user._id,
+          device: device._id,
+          fingerId: newFingerId
+        });
+        await userDevice.save();
+        
+        // Add user to device users array
         device.users.push(user._id);
-        // Emit MQTT event to import fingerprint
-        this.mqttClient.emit(IMPORT_FINGERPRINT, String(user._id));
+        
+        // Send the userId and fingerId to the device
+        this.mqttClient.emit(`${IMPORT_FINGERPRINT}/${device.deviceMac}`, JSON.stringify({
+          userId: String(user._id),
+          fingerId: newFingerId
+        }));
       }
 
       await device.save();
@@ -201,6 +268,33 @@ export class DevicesService {
       };
     } catch (error) {
       console.error('Error in syncAllUser:', error);
+      throw error;
+    }
+  }
+
+  async deleteAllUser(deviceId: string) {
+    try {
+      const device = await this.deviceModel.findById(deviceId);
+
+      if (!device) {
+        throw new NotFoundException('Device Not Found');
+      }
+
+      // Xóa tất cả bản ghi trong UserDevice liên quan đến thiết bị này
+      await this.userDeviceModel.deleteMany({ device: device._id });
+
+      // Xóa tất cả người dùng khỏi mảng users của thiết bị
+      device.users = [];
+      await device.save();
+
+      // Gửi lệnh xóa toàn bộ database vân tay trên thiết bị
+      await this.mqttClient.emit(`empty-database/${device.deviceMac}`, '');
+
+      return {
+        message: 'Successfully deleted all users from device',
+      };
+    } catch (error) {
+      console.error('Error in delete all user', error);
       throw error;
     }
   }

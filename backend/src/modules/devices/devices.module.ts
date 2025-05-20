@@ -5,12 +5,14 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Device, DeviceSchema } from 'src/schema/device.schema';
 import { User, UserSchema } from 'src/schema/user.schema';
 import { MqttModule } from '../mqtt/mqtt.module';
+import { UserDevice, UserDeviceSchema } from 'src/schema/user-device.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       {name: Device.name, schema: DeviceSchema},
-      {name: User.name, schema: UserSchema}
+      {name: User.name, schema: UserSchema},
+      {name: UserDevice.name, schema: UserDeviceSchema }
     ]),
     MqttModule
   ],

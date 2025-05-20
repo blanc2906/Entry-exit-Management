@@ -7,11 +7,11 @@ export class AddFingerprintDto {
 
     @IsString()
     @IsNotEmpty()
-    fingerId: string;
+    fingerId: number;
 
     @IsString()
-    @IsNotEmpty()
-    fingerTemplate : string;
+    //@IsNotEmpty()
+    fingerTemplate? : string;
 
     @IsString()
     @IsNotEmpty()

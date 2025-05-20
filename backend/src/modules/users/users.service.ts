@@ -136,12 +136,12 @@ export class UsersService {
     }
   }
 
-  async getUserByFingerId(fingerId: string, deviceId : string): Promise<UserDocument> {
+  async getUserByFingerId(fingerId: number, deviceId : string): Promise<UserDocument> {
     try {
-      // Find UserDevice record with matching fingerId and deviceId
+
       const userDevice = await this.userdeviceModel.findOne({
         fingerId,
-        device: deviceId
+        device: new Types.ObjectId(deviceId)
       }).populate<{ user: UserDocument }>('user');
 
       if (!userDevice) {
