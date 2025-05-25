@@ -38,7 +38,7 @@ WebServer server(80);
 HardwareSerial mySerial(2);
 Adafruit_Fingerprint finger(&mySerial);
 
-MFRC522DriverPinSimple ss_pin(5);
+MFRC522DriverPinSimple ss_pin(21);
 MFRC522DriverSPI driver{ss_pin}; 
 MFRC522 mfrc522{driver}; 
 
