@@ -1,9 +1,10 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Inject, OnModuleInit } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Inject, OnModuleInit, Query } from '@nestjs/common';
 import { DevicesService } from './devices.service';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
 import { ClientMqtt } from '@nestjs/microservices';
 import { EventPattern } from '@nestjs/microservices';
+import { FindAllDeviceDto } from './dto/find-all-device.dto';
 
 @Controller('devices')
 export class DevicesController implements OnModuleInit {
@@ -32,6 +33,12 @@ export class DevicesController implements OnModuleInit {
     return this.devicesService.createDevice(createDeviceDto);
   }
 
+  @Get('findAll')
+  async findAll(@Query() findAllDeviceDto: FindAllDeviceDto) {
+    const { page, limit, search } = findAllDeviceDto;
+    return await this.devicesService.findAllDevices(page, limit, search);
+  }
+
   @Post(':deviceId/users/:userId')
   addUserToDevice(
     @Param('deviceId') deviceId: string,
@@ -56,5 +63,18 @@ export class DevicesController implements OnModuleInit {
   @Post(':deviceId/delete-all-users')
   deleteAllUser(@Param('deviceId') deviceId : string){
     return this.devicesService.deleteAllUser(deviceId);
+  }
+
+  @Patch(':deviceId')
+  updateDevice(
+    @Param('deviceId') deviceId: string,
+    @Body() updateDeviceDto: UpdateDeviceDto,
+  ) {
+    return this.devicesService.updateDevice(deviceId, updateDeviceDto);
+  }
+
+  @Get(':deviceId/users')
+  getAllUserOfDevice(@Param('deviceId') deviceId: string) {
+    return this.devicesService.getAllUserOfDevice(deviceId);
   }
 }

@@ -9,6 +9,7 @@ import { DELETE_FINGERPRINT, IMPORT_FINGERPRINT } from 'src/shared/constants/mqt
 import { ClientProxy } from '@nestjs/microservices';
 import { EventPattern } from '@nestjs/microservices';
 import { UserDevice, UserDeviceDocument } from 'src/schema/user-device.schema';
+import { UpdateDeviceDto } from './dto/update-device.dto';
 
 @Injectable()
 export class DevicesService {
@@ -110,6 +111,46 @@ export class DevicesService {
     this.verificationCallbacks.delete(deviceMac);
   }
 
+    async findAllDevices(
+    page: number = 1,
+    limit: number = 10,
+    search?: string
+  ): Promise<{ devices: DeviceDocument[]; total: number; page: number; totalPages: number }> {
+    try {
+      const query = search
+        ? {
+            $or: [
+              { deviceMac: { $regex: search, $options: 'i' } },
+              { description: { $regex: search, $options: 'i' } },
+            ],
+          }
+        : {};
+
+      const skip = (page - 1) * limit;
+      const [devices, total] = await Promise.all([
+        this.deviceModel
+          .find(query)
+          .populate({
+            path: 'users',
+            select: 'name email userId'
+          })
+          .skip(skip)
+          .limit(limit)
+          .sort({ createdAt: -1 })
+          .exec(),
+        this.deviceModel.countDocuments(query),
+      ]);
+
+      return {
+        devices,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+      };
+    } catch (error) {
+      throw new Error(`Failed to find devices: ${error.message}`);
+    }
+  }
   // Phương thức addUserToDevice giữ nguyên
    async addUserToDevice(deviceId: string, userId: string) {
     try {
@@ -295,6 +336,117 @@ export class DevicesService {
       };
     } catch (error) {
       console.error('Error in delete all user', error);
+      throw error;
+    }
+  }
+
+  async updateDevice(deviceId: string, updateDeviceDto: UpdateDeviceDto) {
+    try {
+      const device = await this.deviceModel.findById(deviceId);
+      
+      if (!device) {
+        throw new NotFoundException('Device not found');
+      }
+
+      // Update device with new data
+      const updatedDevice = await this.deviceModel.findByIdAndUpdate(
+        deviceId,
+        updateDeviceDto,
+        { new: true, runValidators: true }
+      );
+
+      return updatedDevice;
+    } catch (error) {
+      console.error('Error in updateDevice:', error);
+      throw error;
+    }
+  }
+
+  async getAllUserOfDevice(deviceId: string) {
+    try {
+      const device = await this.deviceModel.findById(deviceId);
+      
+      if (!device) {
+        throw new NotFoundException('Device not found');
+      }
+
+      console.log('deviceId:', deviceId);
+      console.log('device._id:', device._id);
+
+      // Debug: Check if UserDevice records exist
+      const userDeviceCount = await this.userDeviceModel.countDocuments({ device: deviceId });
+      console.log('UserDevice count for this device:', userDeviceCount);
+
+      // Try with device._id instead of deviceId string
+      const userDevices = await this.userDeviceModel
+        .find({ device: device._id })
+        .populate('user', 'name email username createdAt')
+        .exec();
+
+      console.log('userDevices found:', userDevices.length);
+
+      // If still no UserDevice records, create them for existing users
+      if (userDevices.length === 0 && device.users.length > 0) {
+        console.log('Creating missing UserDevice records...');
+        
+        for (let i = 0; i < device.users.length; i++) {
+          const userId = device.users[i];
+          const fingerId = i + 1; // Start from 1
+          
+          await this.userDeviceModel.create({
+            user: userId,
+            device: device._id,
+            fingerId: fingerId
+          });
+        }
+        
+        // Re-fetch after creating
+        const newUserDevices = await this.userDeviceModel
+          .find({ device: device._id })
+          .populate('user', 'name email username createdAt')
+          .exec();
+          
+        const usersWithFingerId = newUserDevices.map(userDevice => ({
+          _id: (userDevice.user as any)._id,
+          name: (userDevice.user as any).name,
+          email: (userDevice.user as any).email,
+          username: (userDevice.user as any).username,
+          createdAt: (userDevice.user as any).createdAt,
+          fingerId: userDevice.fingerId
+        }));
+
+        return {
+          device: {
+            _id: device._id,
+            deviceMac: device.deviceMac,
+            description: device.description
+          },
+          users: usersWithFingerId,
+          totalUsers: usersWithFingerId.length
+        };
+      }
+
+      // Normal flow if UserDevice records exist
+      const usersWithFingerId = userDevices.map(userDevice => ({
+        _id: (userDevice.user as any)._id,
+        name: (userDevice.user as any).name,
+        email: (userDevice.user as any).email,
+        username: (userDevice.user as any).username,
+        createdAt: (userDevice.user as any).createdAt,
+        fingerId: userDevice.fingerId
+      }));
+
+      return {
+        device: {
+          _id: device._id,
+          deviceMac: device.deviceMac,
+          description: device.description
+        },
+        users: usersWithFingerId,
+        totalUsers: usersWithFingerId.length
+      };
+    } catch (error) {
+      console.error('Error in getAllUserOfDevice:', error);
       throw error;
     }
   }

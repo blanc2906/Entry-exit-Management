@@ -9,12 +9,14 @@ import { UsersModule } from '../users/users.module';
 import { HistoryService } from './history.service';
 import { MqttModule } from '../mqtt/mqtt.module';
 import { DevicesModule } from '../devices/devices.module';
+import { Device, DeviceSchema } from 'src/schema/device.schema';
 
 @Module({
   imports : [
     MongooseModule.forFeature([
       {name: History.name, schema: HistorySchema},
-      {name: User.name, schema: UserSchema}
+      {name: User.name, schema: UserSchema},
+      {name: Device.name, schema : DeviceSchema}
     ]),
     UsersModule,
     MqttModule,

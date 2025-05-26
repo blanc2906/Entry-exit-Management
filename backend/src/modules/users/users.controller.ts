@@ -1,8 +1,9 @@
-import { Body, Controller, Logger, Post, Param, Get } from "@nestjs/common";
+import { Body, Controller, Logger, Post, Param, Get, Query, Delete, HttpCode, HttpStatus } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
 import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
+import { FindAllUsersDto } from "./dto/find-all-user.dto";
 
 
 
@@ -17,6 +18,18 @@ export class UsersController {
   @Post('create-user')
   async createUser(@Body() createUserDto : CreateUserDto){
     await this.usersService.createUser(createUserDto);
+  }
+
+  @Get('findAll')
+  async findAll(@Query() findAllUsersDto: FindAllUsersDto) {
+    const { page, limit, search } = findAllUsersDto;
+    return await this.usersService.findAll(page, limit, search);
+  }
+
+  @Delete(':userId')
+  @HttpCode(HttpStatus.OK)
+  async removeUser(@Param('userId') userId: string) {
+    return await this.usersService.removeUser(userId);
   }
 
   @Post('request-add-fingerprint')
@@ -39,8 +52,11 @@ export class UsersController {
   }
   
   @Post('request-add-cardNumber')
-  async requestAddCardNumber(@Body('userId') userId: string) {
-    await this.usersService.requestAddCardNumber(userId);
+  async requestAddCardNumber(
+    @Body('userId') userId: string,
+    @Body('deviceId') deviceId: string
+  ) {
+    await this.usersService.requestAddCardNumber(userId,deviceId);
   }
   @Post('add-cardNumber')
   async addCardNumber(@Body() addCardNumberDto : AddCardNumberDto) {

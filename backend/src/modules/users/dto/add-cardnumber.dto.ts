@@ -8,4 +8,8 @@ export class AddCardNumberDto {
     @IsString()
     @IsNotEmpty()
     cardNumber : string;
+
+    @IsString()
+    @IsNotEmpty()
+    deviceMac : string;
 }

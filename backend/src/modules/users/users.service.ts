@@ -4,7 +4,7 @@ import { User, UserDocument } from "src/schema/user.schema";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { InjectModel } from "@nestjs/mongoose";
 import { ClientMqtt } from "@nestjs/microservices";
-import { REQUEST_ADD_CARDNUMBER, REQUEST_ADD_FINGERPRINT } from "src/shared/constants/mqtt.constant";
+import { DELETE_FINGERPRINT, REQUEST_ADD_CARDNUMBER, REQUEST_ADD_FINGERPRINT } from "src/shared/constants/mqtt.constant";
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
 import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
 import { Device, DeviceDocument } from "src/schema/device.schema";
@@ -32,10 +32,103 @@ export class UsersService {
   }
   async createUser(createUserDto : CreateUserDto) : Promise<UserDocument> {
     try {
+      // Check if user with the same userId already exists
+      const existingUser = await this.userModel.findOne({ userId: createUserDto.userId });
+      if (existingUser) {
+        throw new Error('User with this userId already exists');
+      }
       const user = new this.userModel(createUserDto);
       return await user.save();
     } catch (error) {
       throw new Error(`Failed to create user : ${error.message}`);
+    }
+  }
+
+  async findAll(
+    page: number = 1,
+    limit: number = 10,
+    search?: string
+  ): Promise<{ users: UserDocument[]; total: number; page: number; totalPages: number }> {
+    try {
+      const query = search
+        ? {
+            $or: [
+              { name: { $regex: search, $options: 'i' } },
+              { email: { $regex: search, $options: 'i' } },
+              { userId: { $regex: search, $options: 'i' } },
+            ],
+          }
+        : {};
+
+      const skip = (page - 1) * limit;
+      const [users, total] = await Promise.all([
+        this.userModel
+          .find(query)
+          .skip(skip)
+          .limit(limit)
+          .sort({ createdAt: -1 })
+          .exec(),
+        this.userModel.countDocuments(query),
+      ]);
+
+      return {
+        users,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+      };
+    } catch (error) {
+      throw new Error(`Failed to find users : ${error.message}`);
+    }
+  }
+
+  async removeUser(userId: string): Promise<{ message: string }> {
+    try {
+      // Find user first to get their ID and check if exists
+      const user = await this.userModel.findById( userId );
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      try {
+        // Get all user-device relationships for this user
+        const userDevices = await this.userdeviceModel
+          .find({ user: user._id })
+          .populate<{ device: DeviceDocument }>('device');
+
+        // For each device, send delete fingerprint command
+        for (const userDevice of userDevices) {
+          const device = userDevice.device;
+          
+          // Send delete fingerprint command to device
+          await this.mqttClient.emit(
+            `${DELETE_FINGERPRINT}/${device.deviceMac}`, 
+            JSON.stringify({
+              fingerId: userDevice.fingerId
+            })
+          );
+        }
+
+        // Remove user-device relationships
+        await this.userdeviceModel.deleteMany({ user: user._id });
+
+        // Update devices to remove user from their users array
+        await this.deviceModel.updateMany(
+          { users: user._id },
+          { $pull: { users: user._id } }
+        );
+
+        // Delete the user
+        await this.userModel.deleteOne({ _id: user._id });
+
+        return { 
+          message: `User deleted successfully from system and ${userDevices.length} devices` 
+        };
+      } catch (error) {
+        throw error;
+      }
+    } catch (error) {
+      throw new Error(`Failed to remove user: ${error.message}`);
     }
   }
 
@@ -55,21 +148,6 @@ export class UsersService {
     }
   }
 
-  async findAll(): Promise<UserDocument[]> {
-    try {
-      return await this.userModel.find().exec();
-    } catch (error) {
-      throw new Error(`Failed to find users : ${error.message}`);
-    }
-  }
-
-  async removeUser(userId: string) : Promise<void> {
-    try {
-      await this.userModel.deleteOne({userId});
-    } catch (error) {
-      throw new Error(`Failed to remove user : ${error.message}`);
-    }
-  }
   async requestAddFingerprint(userId: string, deviceId : string){
     const device = await this.deviceModel.findById(deviceId);
     if(!device){
@@ -157,9 +235,14 @@ export class UsersService {
     }
   }
 
-  async requestAddCardNumber(userId : string){
-    await this.mqttClient.emit(REQUEST_ADD_CARDNUMBER, userId);
+  async requestAddCardNumber(userId: string, deviceId : string){
+    const device = await this.deviceModel.findById(deviceId);
+    if(!device){
+      throw new Error('Device not found');
+    }
+    const deviceMac = device.deviceMac;
 
+    await this.mqttClient.emit(this.getTopic(REQUEST_ADD_CARDNUMBER, deviceMac), userId);
   }
 
   async addCardNumber(addCardNumberDto : AddCardNumberDto): Promise<UserDocument> {
@@ -170,8 +253,18 @@ export class UsersService {
         throw new Error('User not found');
       }
 
+      const device = await this.deviceModel.findOne({ deviceMac: addCardNumberDto.deviceMac });
+      if (!device) {
+        throw new Error('Device not found');
+      }
+
       user.cardNumber = addCardNumberDto.cardNumber;
       user.updatedAt = new Date();
+
+      if (!device.users.includes(user._id as Types.ObjectId)) {
+        device.users.push(user._id as Types.ObjectId);
+        await device.save(); // Save the device document with the updated users array
+      }
 
       return await user.save();
     } catch (error) {

@@ -445,9 +445,52 @@ void callback(char *topic, byte *payload, unsigned int length) {
 }
   
   if (strcmp(topic, addCardTopic.c_str()) == 0)  {
-    currentUserId = String(message);
+    Serial.println("Starting card registration process...");
+    
+    // Parse JSON message
+    DynamicJsonDocument outerDoc(512);
+    DeserializationError outerError = deserializeJson(outerDoc, message);
+    
+    if (outerError) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(outerError.c_str());
+      // Fallback to using the raw message if parsing fails
+      currentUserId = String(message);
+    } else {
+      // Check if this is a NestJS format with pattern and data fields
+      if (outerDoc.containsKey("data")) {
+        // Get the data string
+        const char* dataString = outerDoc["data"];
+        
+        // Parse the inner JSON in the data field
+        DynamicJsonDocument innerDoc(256);
+        DeserializationError innerError = deserializeJson(innerDoc, dataString);
+        
+        if (innerError) {
+          Serial.print("Inner JSON parsing failed: ");
+          Serial.println(innerError.c_str());
+          // Use the data string directly as userId
+          currentUserId = String(dataString);
+        } else {
+          // Extract userId from the inner JSON
+          if (innerDoc.containsKey("userId")) {
+            currentUserId = innerDoc["userId"].as<String>();
+          } else {
+            // Use the whole inner data as userId
+            currentUserId = String(dataString);
+          }
+        }
+      } else if (outerDoc.containsKey("userId")) {
+        // Direct format
+        currentUserId = outerDoc["userId"].as<String>();
+      } else {
+         // Use raw message if no recognizable structure
+        currentUserId = String(message);
+      }
+    }
+    
     if (currentUserId.length() > 0) {
-      Serial.print("User ID to enroll: ");
+      Serial.print("User ID to enroll card: ");
       Serial.println(currentUserId);
       waitingForCardScan = true;
       Serial.println("Please scan your card now...");
@@ -959,6 +1002,7 @@ void sendCardNumberToServer(String userId, String cardNumber) {
   StaticJsonDocument<256> doc; 
   doc["userId"] = userId;
   doc["cardNumber"] = cardNumber;
+  doc["deviceMac"] = macAddress;
   
   String requestBody;
   serializeJson(doc, requestBody);
