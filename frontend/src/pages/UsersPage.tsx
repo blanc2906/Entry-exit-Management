@@ -1,48 +1,193 @@
-import React, { useState } from 'react';
-import { Search, Plus, Settings, Edit, Trash, ChevronLeft, ChevronRight } from 'lucide-react';
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  created: string;
-}
+import React, { useEffect, useState } from 'react';
+import { Plus, Settings, Edit, Trash, Fingerprint, CreditCard } from 'lucide-react';
+import { Table } from '../components/common/Table';
+import { Pagination } from '../components/common/Pagination';
+import { UserFilters } from '../components/users/UserFilters';
+import UserForm from '../components/users/UserForm';
+import SelectDeviceModal from '../components/users/SelectDeviceModal';
+import { useUsers } from '../hooks/useUsers';
+import { User, UserFilters as UserFiltersType } from '../types/user';
+import { userService } from '../services/userService';
 
 const UsersPage: React.FC = () => {
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const {
+    users,
+    selectedUsers,
+    loading,
+    error,
+    meta,
+    fetchUsers,
+    handleSelectAll,
+    handleSelectUser,
+    deleteUser,
+  } = useUsers();
 
-  // Mock data for demonstration
-  const users: User[] = [
-    { id: 'U001', name: 'John Doe', email: 'john@email.com', created: '2024-01-15' },
-    { id: 'U002', name: 'Jane Smith', email: 'jane@email.com', created: '2024-01-15' },
-    { id: 'U003', name: 'Bob J.', email: 'bob@email.com', created: '2024-01-15' },
-  ];
+  const [filters, setFilters] = useState<UserFiltersType>({
+    page: 1,
+    limit: 10,
+  });
 
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedUsers(users.map(user => user.id));
-    } else {
-      setSelectedUsers([]);
+  const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [isSelectDeviceModalOpen, setIsSelectDeviceModalOpen] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [registrationType, setRegistrationType] = useState<'fingerprint' | 'card'>('fingerprint');
+  const [requestStatus, setRequestStatus] = useState<{
+    loading: boolean;
+    error: string | null;
+    success: boolean;
+  }>({
+    loading: false,
+    error: null,
+    success: false,
+  });
+
+  useEffect(() => {
+    fetchUsers(filters);
+  }, [fetchUsers, filters]);
+
+  const handleAddUser = () => {
+    setIsAddUserModalOpen(true);
+  };
+
+  const handleCreateUser = async (userData: { userId: string; name: string }) => {
+    try {
+      await userService.createUser(userData);
+      setIsAddUserModalOpen(false);
+      fetchUsers(filters);
+    } catch (error) {
+      console.error('Error creating user:', error);
     }
   };
 
-  const handleSelectUser = (userId: string) => {
-    setSelectedUsers(prev => 
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
-    );
+  const handleRequestAddFingerprint = (userId: string) => {
+    setSelectedUserId(userId);
+    setRegistrationType('fingerprint');
+    setIsSelectDeviceModalOpen(true);
   };
 
-  const handleAddUser = () => {
-    console.log('Opening add user modal...');
+  const handleRequestAddCardNumber = (userId: string) => {
+    setSelectedUserId(userId);
+    setRegistrationType('card');
+    setIsSelectDeviceModalOpen(true);
   };
 
-  const handleExport = () => {
-    console.log('Exporting users data...');
+  const handleDeviceSelect = async (deviceId: string) => {
+    setRequestStatus({ loading: true, error: null, success: false });
+    try {
+      if (registrationType === 'fingerprint') {
+        await userService.requestAddFingerprint(selectedUserId, deviceId);
+      } else {
+        await userService.requestAddCardNumber(selectedUserId, deviceId);
+      }
+      setRequestStatus({ loading: false, error: null, success: true });
+      // Close the modal after a short delay to show success message
+      setTimeout(() => {
+        setIsSelectDeviceModalOpen(false);
+        setRequestStatus({ loading: false, error: null, success: false });
+      }, 1500);
+    } catch (error) {
+      console.error(`Error requesting ${registrationType} registration:`, error);
+      setRequestStatus({
+        loading: false,
+        error: `Failed to request ${registrationType} registration`,
+        success: false,
+      });
+    }
   };
+
+  const columns = [
+    { 
+      key: 'userId' as keyof User, 
+      header: 'User ID',
+      render: (value: string | undefined) => value || '',
+    },
+    { 
+      key: 'name' as keyof User, 
+      header: 'Name',
+      render: (value: string | undefined) => value || '',
+    },
+    { 
+      key: 'email' as keyof User, 
+      header: 'Email',
+      render: (value: string | undefined) => value || '',
+    },
+    {
+      key: 'fingerTemplate' as keyof User,
+      header: 'Fingerprint',
+      render: (value: string | undefined, user: User) => (
+        value ? (
+          <div className="flex items-center justify-center">
+            <Fingerprint size={18} className="text-primary-600" />
+          </div>
+        ) : (
+          <button
+            onClick={() => handleRequestAddFingerprint(user._id)}
+            className="px-2 py-1 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50"
+          >
+            Add Fingerprint
+          </button>
+        )
+      ),
+    },
+    {
+      key: 'cardNumber' as keyof User,
+      header: 'Card Number',
+      render: (value: string | undefined, user: User) => (
+        value ? (
+          <div className="flex items-center justify-center">
+            <CreditCard size={18} className="text-primary-600" />
+            <span className="ml-2 text-sm text-gray-600">{value}</span>
+          </div>
+        ) : (
+          <button
+            onClick={() => handleRequestAddCardNumber(user._id)}
+            className="px-2 py-1 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50"
+          >
+            Add Card
+          </button>
+        )
+      ),
+    },
+    {
+      key: '_id' as keyof User,
+      header: 'Actions',
+      render: (_: string | undefined, user: User) => (
+        <div className="flex items-center space-x-3">
+          <button 
+            className="text-gray-400 hover:text-primary-600"
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('Settings for user:', user._id);
+            }}
+          >
+            <Settings size={18} />
+          </button>
+          <button 
+            className="text-gray-400 hover:text-primary-600"
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('Edit user:', user._id);
+            }}
+          >
+            <Edit size={18} />
+          </button>
+          <button 
+            className="text-gray-400 hover:text-red-600"
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteUser(user._id);
+            }}
+          >
+            <Trash size={18} />
+          </button>
+        </div>
+      ),
+    },
+  ];
+
+  if (error) {
+    return <div className="text-red-500 p-4">{error}</div>;
+  }
 
   return (
     <div className="space-y-6">
@@ -57,146 +202,42 @@ const UsersPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Search and Filters */}
-      <div className="flex items-center justify-between gap-4 bg-white p-4 rounded-lg border border-gray-200">
-        <div className="flex-1 relative">
-          <input
-            type="text"
-            placeholder="Search users..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
-          />
-          <Search size={18} className="absolute left-3 top-2.5 text-gray-400" />
-        </div>
-        <div className="flex items-center gap-2">
-          <select className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500">
-            <option value="">Filter ▼</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            Export ▼
-          </button>
-        </div>
-      </div>
-
-      {/* Users Table */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left">
-                  <input
-                    type="checkbox"
-                    checked={selectedUsers.length === users.length}
-                    onChange={handleSelectAll}
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                  />
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Email
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Created
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={selectedUsers.includes(user.id)}
-                      onChange={() => handleSelectUser(user.id)}
-                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.id}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.name}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {user.email}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(user.created).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <div className="flex items-center space-x-3">
-                      <button className="text-gray-400 hover:text-primary-600">
-                        <Settings size={18} />
-                      </button>
-                      <button className="text-gray-400 hover:text-primary-600">
-                        <Edit size={18} />
-                      </button>
-                      <button className="text-gray-400 hover:text-red-600">
-                        <Trash size={18} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table<User>
+          data={users}
+          columns={columns}
+          isLoading={loading}
+          selectable
+          selectedIds={selectedUsers}
+          onSelectAll={handleSelectAll}
+          onSelectItem={handleSelectUser}
+        />
 
-        {/* Pagination */}
-        <div className="px-6 py-3 flex items-center justify-between border-t border-gray-200 bg-gray-50">
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              disabled={currentPage === 1}
-              className="p-1 rounded-md hover:bg-gray-200 disabled:opacity-50"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            {[1, 2, 3].map(page => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`px-3 py-1 rounded-md ${
-                  currentPage === page
-                    ? 'bg-primary-600 text-white'
-                    : 'hover:bg-gray-200'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-            <span className="px-2">...</span>
-            <button
-              onClick={() => setCurrentPage(10)}
-              className={`px-3 py-1 rounded-md hover:bg-gray-200`}
-            >
-              10
-            </button>
-            <button
-              onClick={() => setCurrentPage(prev => prev + 1)}
-              disabled={currentPage === 10}
-              className="p-1 rounded-md hover:bg-gray-200 disabled:opacity-50"
-            >
-              <ChevronRight size={20} />
-            </button>
-          </div>
-        </div>
+        <Pagination
+          currentPage={meta.currentPage}
+          totalPages={meta.totalPages}
+          onPageChange={(page) => setFilters({ ...filters, page })}
+        />
       </div>
+
+      {isAddUserModalOpen && (
+        <UserForm
+          onSubmit={handleCreateUser}
+          onClose={() => setIsAddUserModalOpen(false)}
+        />
+      )}
+
+      {isSelectDeviceModalOpen && (
+        <SelectDeviceModal
+          onSelect={handleDeviceSelect}
+          onClose={() => {
+            setIsSelectDeviceModalOpen(false);
+            setRequestStatus({ loading: false, error: null, success: false });
+          }}
+          registrationType={registrationType}
+          requestStatus={requestStatus}
+        />
+      )}
     </div>
   );
 };

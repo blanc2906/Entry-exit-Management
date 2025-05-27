@@ -1,5 +1,7 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Home, Users, Cpu, GitBranch, Calendar, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { useActiveRoute } from '../../hooks/useActiveRoute';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -10,12 +12,13 @@ interface NavItem {
   name: string;
   icon: React.ReactNode;
   path: string;
-  active?: boolean;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
+  const { isActive } = useActiveRoute();
+
   const navItems: NavItem[] = [
-    { name: 'Dashboard', icon: <Home size={20} />, path: '/', active: true },
+    { name: 'Dashboard', icon: <Home size={20} />, path: '/' },
     { name: 'Users', icon: <Users size={20} />, path: '/users' },
     { name: 'Devices', icon: <Cpu size={20} />, path: '/devices' },
     { name: 'U-D Matrix', icon: <GitBranch size={20} />, path: '/matrix' },
@@ -42,21 +45,26 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
       >
         <div className="h-full flex flex-col justify-between px-3 py-4 overflow-y-auto">
           <nav className="space-y-1 mt-2">
-            {navItems.map((item) => (
-              <a
-                key={item.name}
-                href={item.path}
-                className={`flex items-center px-4 py-3 text-base font-medium rounded-lg group transition-colors duration-150 
-                  ${item.active 
-                    ? 'text-white bg-primary-600 hover:bg-primary-700' 
-                    : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-              >
-                <span className="mr-3">{item.icon}</span>
-                <span className="flex-1">{item.name}</span>
-                {item.active && <ChevronRight size={16} />}
-              </a>
-            ))}
+            {navItems.map((item) => {
+              const active = isActive(item.path);
+              return (
+                <Link
+                  key={item.name}
+                  to={item.path}
+                  className={`flex items-center px-4 py-3 text-base font-medium rounded-lg group transition-colors duration-150 
+                    ${active 
+                      ? 'text-white bg-primary-600 hover:bg-primary-700' 
+                      : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                >
+                  <span className={`mr-3 ${active ? 'text-white' : 'text-gray-400 group-hover:text-gray-500'}`}>
+                    {item.icon}
+                  </span>
+                  <span className="flex-1">{item.name}</span>
+                  {active && <ChevronRight size={16} />}
+                </Link>
+              );
+            })}
           </nav>
 
           <div className="px-4 py-4 mt-auto">
