@@ -2,6 +2,14 @@
 import React, { useState, useMemo } from 'react';
 import { User } from '../../../types/user';
 import UserCard from './UserCard';
+import { motion } from 'framer-motion';
+import { 
+  SearchIcon,
+  FilterIcon,
+  SortAscendingIcon,
+  SortDescendingIcon,
+  UserGroupIcon
+} from '@heroicons/react/outline';
 
 interface UserListProps {
   users: User[];
@@ -11,6 +19,35 @@ interface UserListProps {
   onAddCardNumber: (user: User) => void;
   onViewDetails: (user: User) => void;
 }
+
+const UserSkeleton = () => (
+  <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 animate-pulse">
+    <div className="flex items-start justify-between mb-4">
+      <div className="flex-1">
+        <div className="h-6 bg-gray-200 rounded w-1/3 mb-2"></div>
+        <div className="h-4 bg-gray-200 rounded w-1/4 mb-1"></div>
+        <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+      </div>
+      <div className="flex flex-col space-y-2">
+        <div className="h-6 bg-gray-200 rounded-full w-24"></div>
+      </div>
+    </div>
+    <div className="space-y-2 mb-4 divide-y divide-gray-100">
+      <div className="flex justify-between items-center py-2">
+        <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+        <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+      </div>
+      <div className="flex justify-between items-center py-2">
+        <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+        <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+      </div>
+    </div>
+    <div className="flex gap-2">
+      <div className="h-8 bg-gray-200 rounded-lg w-20"></div>
+      <div className="h-8 bg-gray-200 rounded-lg w-20"></div>
+    </div>
+  </div>
+);
 
 const UserList: React.FC<UserListProps> = ({
   users,
@@ -49,7 +86,6 @@ const UserList: React.FC<UserListProps> = ({
       return matchesSearch && matchesFilter;
     });
 
-    // Sort users
     filtered.sort((a, b) => {
       let aValue: any, bValue: any;
       
@@ -80,59 +116,84 @@ const UserList: React.FC<UserListProps> = ({
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-2 text-gray-600">Loading users...</span>
+      <div className="space-y-6">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-10 bg-gray-200 rounded animate-pulse"></div>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <UserSkeleton key={i} />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
       {/* Search and Filter Controls */}
-      <div className="bg-white p-4 rounded-lg shadow">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div>
-            <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-1">
-              Search
+            <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-2">
+              Search Users
             </label>
-            <input
-              type="text"
-              id="search"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by name, ID, or email"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <SearchIcon className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                id="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Name, ID, or email"
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+            </div>
           </div>
 
           <div>
-            <label htmlFor="filter" className="block text-sm font-medium text-gray-700 mb-1">
-              Filter
+            <label htmlFor="filter" className="block text-sm font-medium text-gray-700 mb-2">
+              Filter By
             </label>
-            <select
-              id="filter"
-              value={filterBy}
-              onChange={(e) => setFilterBy(e.target.value as any)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="all">All Users</option>
-              <option value="with-fingerprint">With Fingerprint</option>
-              <option value="without-fingerprint">Without Fingerprint</option>
-              <option value="with-card">With Card</option>
-              <option value="without-card">Without Card</option>
-            </select>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FilterIcon className="h-5 w-5 text-gray-400" />
+              </div>
+              <select
+                id="filter"
+                value={filterBy}
+                onChange={(e) => setFilterBy(e.target.value as any)}
+                className="block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm appearance-none"
+              >
+                <option value="all">All Users</option>
+                <option value="with-fingerprint">With Fingerprint</option>
+                <option value="without-fingerprint">Without Fingerprint</option>
+                <option value="with-card">With Card</option>
+                <option value="without-card">Without Card</option>
+              </select>
+            </div>
           </div>
 
           <div>
-            <label htmlFor="sort" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="sort" className="block text-sm font-medium text-gray-700 mb-2">
               Sort By
             </label>
             <select
               id="sort"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             >
               <option value="name">Name</option>
               <option value="created">Created Date</option>
@@ -141,42 +202,57 @@ const UserList: React.FC<UserListProps> = ({
           </div>
 
           <div>
-            <label htmlFor="order" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="order" className="block text-sm font-medium text-gray-700 mb-2">
               Order
             </label>
-            <select
-              id="order"
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as any)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <button
+              onClick={() => setSortOrder(order => order === 'asc' ? 'desc' : 'asc')}
+              className="flex items-center justify-between w-full px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             >
-              <option value="asc">Ascending</option>
-              <option value="desc">Descending</option>
-            </select>
+              <span>{sortOrder === 'asc' ? 'Ascending' : 'Descending'}</span>
+              {sortOrder === 'asc' ? (
+                <SortAscendingIcon className="h-5 w-5 text-gray-400" />
+              ) : (
+                <SortDescendingIcon className="h-5 w-5 text-gray-400" />
+              )}
+            </button>
           </div>
         </div>
       </div>
 
       {/* Results Summary */}
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-600">
-          Showing {filteredAndSortedUsers.length} of {users.length} users
-        </p>
+      <div className="flex justify-between items-center px-1">
+        <div className="flex items-center text-sm text-gray-600">
+          <UserGroupIcon className="h-5 w-5 text-gray-400 mr-2" />
+          <span>
+            Showing <span className="font-medium text-gray-900">{filteredAndSortedUsers.length}</span> of{' '}
+            <span className="font-medium text-gray-900">{users.length}</span> users
+          </span>
+        </div>
       </div>
 
       {/* User Grid */}
       {filteredAndSortedUsers.length === 0 ? (
-        <div className="text-center py-12">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center py-12 bg-white rounded-xl shadow-sm border border-gray-100"
+        >
           <div className="text-gray-400 text-6xl mb-4">👥</div>
           <h3 className="text-lg font-medium text-gray-900 mb-2">No users found</h3>
-          <p className="text-gray-500">
+          <p className="text-gray-500 max-w-sm mx-auto">
             {searchTerm || filterBy !== 'all'
               ? 'Try adjusting your search or filter criteria.'
               : 'Create your first user to get started.'}
           </p>
-        </div>
+        </motion.div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, staggerChildren: 0.1 }}
+          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+        >
           {filteredAndSortedUsers.map((user) => (
             <UserCard
               key={user._id}
@@ -187,9 +263,9 @@ const UserList: React.FC<UserListProps> = ({
               onViewDetails={onViewDetails}
             />
           ))}
-        </div>
+        </motion.div>
       )}
-    </div>
+    </motion.div>
   );
 };
 

@@ -6,6 +6,8 @@ import { useUserStore } from '../../store/useUserStore';
 import UserList from './components/UserList';
 import CardNumberModal from './components/CardNumberModal';
 import FingerprintModal from './components/FingerprintModal';
+import { motion } from 'framer-motion';
+import { UserIcon } from '@heroicons/react/outline';
 
 const UsersPage: React.FC = () => {
   const router = useRouter();
@@ -56,24 +58,38 @@ const UsersPage: React.FC = () => {
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-8">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="mb-8"
+        >
           <div className="flex justify-between items-center">
-            <h1 className="text-3xl font-bold text-gray-900">Users</h1>
-            <button
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Users</h1>
+              <p className="mt-2 text-gray-600">
+                Manage users, fingerprints, and access cards
+              </p>
+            </div>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={handleCreateUser}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-sm transition-colors"
             >
+              <UserIcon className="w-5 h-5 mr-2" />
               Create New User
-            </button>
+            </motion.button>
           </div>
-          <p className="mt-2 text-gray-600">
-            Manage users, fingerprints, and access cards
-          </p>
-        </div>
+        </motion.div>
 
         {/* Error Display */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg shadow-sm"
+          >
             <div className="flex">
               <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -83,7 +99,7 @@ const UsersPage: React.FC = () => {
                 <p className="mt-1 text-sm text-red-600">{error}</p>
               </div>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* User List */}
@@ -103,13 +119,12 @@ const UsersPage: React.FC = () => {
           user={selectedUser}
         />
         
-        {/* Uncomment when you have the FingerprintModal component
         <FingerprintModal
           isOpen={isFingerprintModalOpen}
           onClose={() => setIsFingerprintModalOpen(false)}
           user={selectedUser}
+          devices={selectedUser?.devices || []}
         />
-        */}
       </div>
     </div>
   );

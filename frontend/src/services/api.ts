@@ -1,7 +1,7 @@
 // frontend/src/services/api.ts
 import { User, CreateUserDto, AddFingerprintDto, AddCardNumberDto } from '../types/user';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
 class ApiService {
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -15,17 +15,44 @@ class ApiService {
     });
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     return response.json();
   }
 
-  // User APIs
+  // User APIs - Matching backend endpoints exactly
+  async getAllUsers(page = 1, limit = 100, search?: string): Promise<{
+    users: User[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      ...(search && { search })
+    });
+    
+    return this.request<{
+      users: User[];
+      total: number;
+      page: number;
+      totalPages: number;
+    }>(`/users/findAll?${params}`);
+  }
+
   async createUser(userData: CreateUserDto): Promise<User> {
     return this.request<User>('/users/create-user', {
       method: 'POST',
       body: JSON.stringify(userData),
+    });
+  }
+
+  async removeUser(userId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/users/${userId}`, {
+      method: 'DELETE',
     });
   }
 
@@ -47,10 +74,10 @@ class ApiService {
     return this.request<{ userId: string; templateData: string }>(`/users/${userId}/get-finger-data`);
   }
 
-  async requestAddCardNumber(userId: string): Promise<void> {
+  async requestAddCardNumber(userId: string, deviceId: string): Promise<void> {
     return this.request<void>('/users/request-add-cardNumber', {
       method: 'POST',
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ userId, deviceId }),
     });
   }
 
@@ -62,6 +89,26 @@ class ApiService {
   }
 
   // Device APIs for user management
+  async getAllDevices(page = 1, limit = 100, search?: string): Promise<{
+    devices: any[];
+    total: number;
+    page: number;
+    totalPages: number;
+  }> {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      ...(search && { search })
+    });
+    
+    return this.request<{
+      devices: any[];
+      total: number;
+      page: number;
+      totalPages: number;
+    }>(`/devices/findAll?${params}`);
+  }
+
   async addUserToDevice(deviceId: string, userId: string): Promise<any> {
     return this.request<any>(`/devices/${deviceId}/users/${userId}`, {
       method: 'POST',
@@ -84,6 +131,53 @@ class ApiService {
     return this.request<any>(`/devices/${deviceId}/delete-all-users`, {
       method: 'POST',
     });
+  }
+
+  async getAllUserOfDevice(deviceId: string): Promise<{
+    device: any;
+    users: any[];
+    totalUsers: number;
+  }> {
+    return this.request<{
+      device: any;
+      users: any[];
+      totalUsers: number;
+    }>(`/devices/${deviceId}/users`);
+  }
+
+  // History APIs
+  async getAllHistory(
+    page = 1,
+    limit = 100,
+    search?: string,
+    deviceId?: string,
+    userId?: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<{
+    histories: any[];
+    total: number;
+    page: number;
+    totalPages: number;
+    filters: any;
+  }> {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      ...(search && { search }),
+      ...(deviceId && { deviceId }),
+      ...(userId && { userId }),
+      ...(startDate && { startDate }),
+      ...(endDate && { endDate })
+    });
+    
+    return this.request<{
+      histories: any[];
+      total: number;
+      page: number;
+      totalPages: number;
+      filters: any;
+    }>(`/history/findAll?${params}`);
   }
 }
 

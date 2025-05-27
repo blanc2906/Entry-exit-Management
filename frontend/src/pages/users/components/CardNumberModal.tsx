@@ -29,11 +29,14 @@ const CardNumberModal: React.FC<CardNumberModalProps> = ({
     if (!user) return;
     
     try {
-      await requestAddCardNumber(user._id);
+      // Note: Backend expects deviceId, but for card we might use a default device or handle differently
+      await requestAddCardNumber(user._id, 'default-device');
       setStep('waiting');
       // Simulate waiting for card scan
       setTimeout(() => {
         setStep('input-card');
+        // Simulate scanned card number
+        setCardNumber('1234567890');
       }, 3000);
     } catch (error) {
       console.error('Error requesting card number:', error);
@@ -47,6 +50,7 @@ const CardNumberModal: React.FC<CardNumberModalProps> = ({
       await addCardNumber({
         userId: user._id,
         cardNumber: cardNumber.trim(),
+        deviceMac: 'default-device-mac' // This should come from device selection
       });
       onClose();
     } catch (error) {
@@ -63,52 +67,122 @@ const CardNumberModal: React.FC<CardNumberModalProps> = ({
   if (!isOpen || !user) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      background: 'rgba(0, 0, 0, 0.5)',
+      backdropFilter: 'blur(5px)',
+      zIndex: 1000,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <div style={{
+        background: 'white',
+        borderRadius: '20px',
+        padding: '2rem',
+        maxWidth: '500px',
+        width: '90%',
+        maxHeight: '90vh',
+        overflow: 'auto',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1a202c', margin: 0 }}>
             Add Card Number for {user.name}
           </h2>
           <button
             onClick={handleClose}
-            className="text-gray-400 hover:text-gray-600"
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '1.5rem',
+              cursor: 'pointer',
+              color: '#64748b',
+              padding: '0.5rem',
+              borderRadius: '8px',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = '#f1f5f9';
+              e.currentTarget.style.color = '#1a202c';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = 'none';
+              e.currentTarget.style.color = '#64748b';
+            }}
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            ✕
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-sm text-red-600">{error}</p>
+          <div style={{
+            marginBottom: '1rem',
+            padding: '0.75rem',
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px'
+          }}>
+            <p style={{ fontSize: '0.875rem', color: '#dc2626', margin: 0 }}>{error}</p>
           </div>
         )}
 
         {step === 'request' && (
-          <div className="space-y-4">
-            <div className="text-center">
-              <div className="text-blue-500 text-6xl mb-4">💳</div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+          <div>
+            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+              <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>💳</div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#1a202c', marginBottom: '0.5rem' }}>
                 Ready to Add Card
               </h3>
-              <p className="text-sm text-gray-600 mb-6">
+              <p style={{ fontSize: '0.875rem', color: '#64748b', marginBottom: '0' }}>
                 Click the button below to request card scanning. 
                 Make sure you have the card ready to scan.
               </p>
             </div>
 
-            <div className="flex justify-end space-x-3">
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <button
                 onClick={handleClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                style={{
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  color: '#4b5563',
+                  background: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'white'}
               >
                 Cancel
               </button>
               <button
                 onClick={handleRequestCard}
                 disabled={loading}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  color: 'white',
+                  background: loading ? '#9ca3af' : '#3b82f6',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseOver={(e) => {
+                  if (!loading) e.currentTarget.style.background = '#2563eb';
+                }}
+                onMouseOut={(e) => {
+                  if (!loading) e.currentTarget.style.background = '#3b82f6';
+                }}
               >
                 {loading ? 'Requesting...' : 'Request Card Scan'}
               </button>
@@ -117,52 +191,106 @@ const CardNumberModal: React.FC<CardNumberModalProps> = ({
         )}
 
         {step === 'waiting' && (
-          <div className="text-center space-y-4">
-            <div className="animate-pulse text-blue-500 text-6xl mb-4">💳</div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ 
+              fontSize: '4rem', 
+              marginBottom: '1rem',
+              animation: 'pulse 2s infinite'
+            }}>💳</div>
             <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#1a202c', marginBottom: '0.5rem' }}>
                 Waiting for Card Scan
               </h3>
-              <p className="text-sm text-gray-600">
+              <p style={{ fontSize: '0.875rem', color: '#64748b', marginBottom: '1rem' }}>
                 Please scan your card on the device reader. 
                 The system will automatically detect and capture the card number.
               </p>
             </div>
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+            <div style={{
+              width: '2rem',
+              height: '2rem',
+              border: '2px solid #e5e7eb',
+              borderTop: '2px solid #3b82f6',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto'
+            }}></div>
           </div>
         )}
 
         {step === 'input-card' && (
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="cardNumber" className="block text-sm font-medium text-gray-700 mb-2">
+          <div>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '0.5rem' }}>
                 Card Number
               </label>
               <input
                 type="text"
-                id="cardNumber"
                 value={cardNumber}
                 onChange={(e) => setCardNumber(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '1rem',
+                  transition: 'all 0.3s ease'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#3b82f6';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#d1d5db';
+                  e.target.style.boxShadow = 'none';
+                }}
                 placeholder="Enter or verify card number"
                 autoFocus
               />
-              <p className="mt-1 text-xs text-gray-500">
+              <p style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
                 The card number should be automatically filled. Verify or enter manually if needed.
               </p>
             </div>
 
-            <div className="flex justify-end space-x-3">
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <button
                 onClick={handleClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                style={{
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  color: '#4b5563',
+                  background: 'white',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = '#f9fafb'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'white'}
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddCard}
                 disabled={loading || !cardNumber.trim()}
-                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 border border-transparent rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  padding: '0.5rem 1rem',
+                  fontSize: '0.875rem',
+                  fontWeight: '500',
+                  color: 'white',
+                  background: loading || !cardNumber.trim() ? '#9ca3af' : '#7c3aed',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: loading || !cardNumber.trim() ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+                onMouseOver={(e) => {
+                  if (!loading && cardNumber.trim()) e.currentTarget.style.background = '#6d28d9';
+                }}
+                onMouseOut={(e) => {
+                  if (!loading && cardNumber.trim()) e.currentTarget.style.background = '#7c3aed';
+                }}
               >
                 {loading ? 'Adding...' : 'Add Card Number'}
               </button>
@@ -170,6 +298,17 @@ const CardNumberModal: React.FC<CardNumberModalProps> = ({
           </div>
         )}
       </div>
+
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };

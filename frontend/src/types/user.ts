@@ -8,7 +8,7 @@ export interface User {
   cardNumber?: string;
   createdAt: Date;
   updatedAt?: Date;
-  devices: string[];
+  devices: Array<{ _id: string; deviceMac: string; description: string }>;
   history: string[];
 }
 
@@ -28,4 +28,5 @@ export interface AddFingerprintDto {
 export interface AddCardNumberDto {
   userId: string;
   cardNumber: string;
+  deviceMac : string;
 }
