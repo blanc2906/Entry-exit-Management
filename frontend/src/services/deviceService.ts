@@ -1,7 +1,18 @@
 import axios from 'axios';
 import { Device, DeviceFilters } from '../types/device';
+import { User } from '../types/user';
 
 const API_URL = 'http://localhost:3000';
+
+interface DeviceUsersResponse {
+  device: {
+    _id: string;
+    deviceMac: string;
+    description: string;
+  };
+  users: (User & { fingerId: number })[];
+  totalUsers: number;
+}
 
 export const deviceService = {
   async getDevices(filters: DeviceFilters) {
@@ -38,6 +49,16 @@ export const deviceService = {
 
   async deleteDevice(deviceId: string) {
     const response = await axios.delete(`${API_URL}/devices/${deviceId}`);
+    return response.data;
+  },
+
+  async getDeviceUsers(deviceId: string): Promise<DeviceUsersResponse> {
+    const response = await axios.get(`${API_URL}/devices/${deviceId}/users`);
+    return response.data;
+  },
+
+  async removeUserFromDevice(deviceId: string, userId: string) {
+    const response = await axios.delete(`${API_URL}/devices/${deviceId}/users/${userId}`);
     return response.data;
   },
 }; 

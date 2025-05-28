@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Home, Users, Cpu, GitBranch, Calendar, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Home, Users, Cpu, Calendar, Settings, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useActiveRoute } from '../../hooks/useActiveRoute';
 
 interface SidebarProps {
@@ -21,7 +21,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     { name: 'Dashboard', icon: <Home size={20} />, path: '/' },
     { name: 'Users', icon: <Users size={20} />, path: '/users' },
     { name: 'Devices', icon: <Cpu size={20} />, path: '/devices' },
-    { name: 'U-D Matrix', icon: <GitBranch size={20} />, path: '/matrix' },
     { name: 'Attendance', icon: <Calendar size={20} />, path: '/attendance' },
     { name: 'Settings', icon: <Settings size={20} />, path: '/settings' },
   ];

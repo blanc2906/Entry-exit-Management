@@ -5,6 +5,9 @@ import { Pagination } from '../components/common/Pagination';
 import { useDevices } from '../hooks/useDevices';
 import { Device, DeviceFilters } from '../types/device';
 import DeviceForm from '../components/devices/DeviceForm';
+import DeviceUsersModal from '../components/devices/DeviceUsersModal';
+import { deviceService } from '../services/deviceService';
+import { User } from '../types/user';
 
 const DevicesPage: React.FC = () => {
   const {
@@ -26,6 +29,17 @@ const DevicesPage: React.FC = () => {
   });
 
   const [isAddDeviceModalOpen, setIsAddDeviceModalOpen] = useState(false);
+  const [selectedDeviceUsers, setSelectedDeviceUsers] = useState<{
+    device: Device | null;
+    users: (User & { fingerId: number })[];
+    loading: boolean;
+    error: string | null;
+  }>({
+    device: null,
+    users: [],
+    loading: false,
+    error: null,
+  });
 
   useEffect(() => {
     fetchDevices(filters);
@@ -34,11 +48,38 @@ const DevicesPage: React.FC = () => {
   const handleAddDevice = async (deviceData: { deviceMac: string; description: string }) => {
     try {
       await createDevice(deviceData);
-      // Refresh the devices list after successful creation
       await fetchDevices(filters);
+      setIsAddDeviceModalOpen(false);
     } catch (error) {
-      // Error will be thrown back to DeviceForm to handle UI feedback
       throw error;
+    }
+  };
+
+  const handleViewUsers = async (device: Device) => {
+    setSelectedDeviceUsers(prev => ({ ...prev, device, loading: true, error: null }));
+    try {
+      const response = await deviceService.getDeviceUsers(device._id);
+      setSelectedDeviceUsers(prev => ({
+        ...prev,
+        users: response.users,
+        loading: false,
+      }));
+    } catch (error) {
+      console.error('Error fetching device users:', error);
+      setSelectedDeviceUsers(prev => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to load users. Please try again.',
+      }));
+    }
+  };
+
+  const handleUserRemoved = async () => {
+    if (selectedDeviceUsers.device) {
+      // Refresh the users list
+      await handleViewUsers(selectedDeviceUsers.device);
+      // Refresh the devices list to update user count
+      await fetchDevices(filters);
     }
   };
 
@@ -56,11 +97,14 @@ const DevicesPage: React.FC = () => {
     { 
       key: 'users' as keyof Device, 
       header: 'Users',
-      render: (value: string[] | undefined) => (
-        <div className="flex items-center">
+      render: (value: any[] | undefined, device: Device) => (
+        <button 
+          onClick={() => handleViewUsers(device)}
+          className="flex items-center hover:text-primary-600 transition-colors"
+        >
           <Users size={18} className="text-gray-400 mr-2" />
           <span>{value?.length || 0}</span>
-        </div>
+        </button>
       ),
     },
     {
@@ -168,6 +212,21 @@ const DevicesPage: React.FC = () => {
         <DeviceForm
           onSubmit={handleAddDevice}
           onClose={() => setIsAddDeviceModalOpen(false)}
+        />
+      )}
+
+      {selectedDeviceUsers.device && (
+        <DeviceUsersModal
+          users={selectedDeviceUsers.users}
+          deviceName={selectedDeviceUsers.device.description || selectedDeviceUsers.device.deviceMac}
+          deviceId={selectedDeviceUsers.device._id}
+          onClose={() => setSelectedDeviceUsers({
+            device: null,
+            users: [],
+            loading: false,
+            error: null,
+          })}
+          onUserRemoved={handleUserRemoved}
         />
       )}
     </div>

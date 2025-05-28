@@ -1,15 +1,12 @@
 export interface User {
   _id: string;
-  name: string;
-  email: string;
-  phoneNumber?: string;
-  cardNumber?: string;
-  fingerprint?: string;
-  createdAt: string;
-  updatedAt: string;
   userId: string;
-  devices?: string[];
-  fingerTemplate?: string;
+  name: string;
+  email?: string;
+  fingerId?: number;
+  cardNumber?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface UsersResponse {

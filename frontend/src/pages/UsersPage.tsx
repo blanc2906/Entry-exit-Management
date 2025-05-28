@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Settings, Edit, Trash, Fingerprint, CreditCard } from 'lucide-react';
+import { Plus, Settings, Edit, Trash, Fingerprint, CreditCard, Loader2 } from 'lucide-react';
 import { Table } from '../components/common/Table';
 import { Pagination } from '../components/common/Pagination';
 import { UserFilters } from '../components/users/UserFilters';
@@ -8,6 +8,7 @@ import SelectDeviceModal from '../components/users/SelectDeviceModal';
 import { useUsers } from '../hooks/useUsers';
 import { User, UserFilters as UserFiltersType } from '../types/user';
 import { userService } from '../services/userService';
+import ConfirmDialog from '../components/common/ConfirmDialog';
 
 const UsersPage: React.FC = () => {
   const {
@@ -40,6 +41,11 @@ const UsersPage: React.FC = () => {
     error: null,
     success: false,
   });
+
+  // State for delete confirmation
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchUsers(filters);
@@ -80,7 +86,6 @@ const UsersPage: React.FC = () => {
         await userService.requestAddCardNumber(selectedUserId, deviceId);
       }
       setRequestStatus({ loading: false, error: null, success: true });
-      // Close the modal after a short delay to show success message
       setTimeout(() => {
         setIsSelectDeviceModalOpen(false);
         setRequestStatus({ loading: false, error: null, success: false });
@@ -94,6 +99,50 @@ const UsersPage: React.FC = () => {
       });
     }
   };
+
+  const handleDeleteClick = (user: User) => {
+    setUserToDelete(user);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    
+    try {
+      setIsDeleting(true);
+      await deleteUser(userToDelete._id);
+      await fetchUsers(filters);
+    } catch (error) {
+      console.error('Error deleting user:', error);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+      setUserToDelete(null);
+    }
+  };
+
+  const renderDeleteConfirmMessage = (user: User) => (
+    <div className="space-y-2">
+      <p>Are you sure you want to delete this user?</p>
+      <div className="bg-gray-50 p-3 rounded-lg">
+        <div className="font-medium">{user.name}</div>
+        <div className="text-sm text-gray-500">{user.userId}</div>
+        {user.email && <div className="text-sm text-gray-500">{user.email}</div>}
+        {user.fingerId && (
+          <div className="text-sm text-gray-500 flex items-center">
+            <Fingerprint size={14} className="mr-1" />
+            ID: {user.fingerId}
+          </div>
+        )}
+        {user.cardNumber && (
+          <div className="text-sm text-gray-500 flex items-center">
+            <CreditCard size={14} className="mr-1" />
+            {user.cardNumber}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   const columns = [
     { 
@@ -175,10 +224,14 @@ const UsersPage: React.FC = () => {
             className="text-gray-400 hover:text-red-600"
             onClick={(e) => {
               e.stopPropagation();
-              deleteUser(user._id);
+              handleDeleteClick(user);
             }}
           >
-            <Trash size={18} />
+            {isDeleting && userToDelete?._id === user._id ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Trash size={18} />
+            )}
           </button>
         </div>
       ),
@@ -238,6 +291,20 @@ const UsersPage: React.FC = () => {
           requestStatus={requestStatus}
         />
       )}
+
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title="Delete User"
+        message={userToDelete ? renderDeleteConfirmMessage(userToDelete) : ''}
+        confirmLabel="Delete User"
+        cancelLabel="Cancel"
+        isLoading={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setUserToDelete(null);
+        }}
+      />
     </div>
   );
 };

@@ -3,18 +3,18 @@ import { User } from './user';
 export interface Device {
   _id: string;
   deviceMac: string;
-  description: string;
-  isOnline: boolean;
+  description?: string;
+  isOnline?: boolean;
   lastSeen?: Date;
   createdAt: Date;
-  updatedAt?: Date;
-  users: string[];
+  updatedAt: Date;
+  users: User[];
 }
 
 export interface DeviceFilters {
+  page?: number;
+  limit?: number;
   search?: string;
-  page: number;
-  limit: number;
   status?: 'online' | 'offline';
 }
 
