@@ -34,6 +34,11 @@ export const userService = {
     return response.data;
   },
 
+  async deleteAllUser() {
+    const response = await axios.delete(`${API_URL}/users/delete-all-users`);
+    return response.data;
+  },
+
   updateUser: async (userId: string, userData: Partial<User>): Promise<User> => {
     const { data } = await axios.patch<User>(`${API_URL}/users/${userId}`, userData);
     return data;

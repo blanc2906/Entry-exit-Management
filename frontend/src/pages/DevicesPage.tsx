@@ -12,14 +12,11 @@ import { User } from '../types/user';
 const DevicesPage: React.FC = () => {
   const {
     devices,
-    selectedDevices,
     loading,
     error,
     meta,
     fetchDevices,
     createDevice,
-    handleSelectAll,
-    handleSelectDevice,
     deleteDevice,
   } = useDevices();
 
@@ -75,6 +72,15 @@ const DevicesPage: React.FC = () => {
   };
 
   const handleUserRemoved = async () => {
+    if (selectedDeviceUsers.device) {
+      // Refresh the users list
+      await handleViewUsers(selectedDeviceUsers.device);
+      // Refresh the devices list to update user count
+      await fetchDevices(filters);
+    }
+  };
+
+  const handleUserAdded = async () => {
     if (selectedDeviceUsers.device) {
       // Refresh the users list
       await handleViewUsers(selectedDeviceUsers.device);
@@ -195,10 +201,6 @@ const DevicesPage: React.FC = () => {
           data={devices}
           columns={columns}
           isLoading={loading}
-          selectable
-          selectedIds={selectedDevices}
-          onSelectAll={handleSelectAll}
-          onSelectItem={handleSelectDevice}
         />
 
         <Pagination
@@ -220,13 +222,9 @@ const DevicesPage: React.FC = () => {
           users={selectedDeviceUsers.users}
           deviceName={selectedDeviceUsers.device.description || selectedDeviceUsers.device.deviceMac}
           deviceId={selectedDeviceUsers.device._id}
-          onClose={() => setSelectedDeviceUsers({
-            device: null,
-            users: [],
-            loading: false,
-            error: null,
-          })}
+          onClose={() => setSelectedDeviceUsers(prev => ({ ...prev, device: null }))}
           onUserRemoved={handleUserRemoved}
+          onUserAdded={handleUserAdded}
         />
       )}
     </div>

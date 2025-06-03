@@ -5,7 +5,6 @@ import { AxiosError } from 'axios';
 
 export const useUsers = () => {
   const [users, setUsers] = useState<User[]>([]);
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState({
@@ -54,25 +53,11 @@ export const useUsers = () => {
     }
   }, []);
 
-  const handleSelectAll = useCallback((checked: boolean) => {
-    setSelectedUsers(checked ? users.map(user => user._id) : []);
-  }, [users]);
-
-  const handleSelectUser = useCallback((userId: string) => {
-    setSelectedUsers(prev => {
-      if (prev.includes(userId)) {
-        return prev.filter(id => id !== userId);
-      }
-      return [...prev, userId];
-    });
-  }, []);
-
   const deleteUser = useCallback(async (userId: string) => {
     try {
       setError(null);
       await userService.deleteUser(userId);
       setUsers(prev => prev.filter(user => user._id !== userId));
-      setSelectedUsers(prev => prev.filter(id => id !== userId));
     } catch (err) {
       handleError(err);
     }
@@ -92,13 +77,10 @@ export const useUsers = () => {
 
   return {
     users,
-    selectedUsers,
     loading,
     error,
     meta,
     fetchUsers,
-    handleSelectAll,
-    handleSelectUser,
     deleteUser,
     createUser,
   };

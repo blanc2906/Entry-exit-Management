@@ -77,4 +77,9 @@ export class DevicesController implements OnModuleInit {
   getAllUserOfDevice(@Param('deviceId') deviceId: string) {
     return this.devicesService.getAllUserOfDevice(deviceId);
   }
+
+  @Get(':deviceId/users-not-in-device')
+  async getAllUserNotInDevice(@Param('deviceId') deviceId: string) {
+  return this.devicesService.getAllUserNotInDevice(deviceId);
+}
 }

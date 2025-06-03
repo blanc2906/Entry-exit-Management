@@ -1,36 +1,11 @@
-import { IsOptional, IsNumber, IsString, Min, IsDateString } from 'class-validator';
-import { Type } from 'class-transformer';
-
+// src/modules/history/dto/find-all-history.dto.ts
 export class FindAllHistoryDto {
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  page?: number;
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  limit?: number;
-
-  @IsOptional()
-  @IsString()
-  search?: string;
-
-  @IsOptional()
-  @IsString()
-  deviceId?: string;
-
-  @IsOptional()
-  @IsString()
-  userId?: string;
-
-  @IsOptional()
-  @IsDateString()
-  startDate?: string;
-
-  @IsOptional()
-  @IsDateString()
-  endDate?: string;
+    page?: number;
+    limit?: number;
+    search?: string;
+    deviceId?: string;
+    userId?: string;
+    startDate?: string;
+    endDate?: string;
+    authMethod?: 'fingerprint' | 'card';  // Thêm filter theo phương thức xác thực
 }

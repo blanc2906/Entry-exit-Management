@@ -13,13 +13,10 @@ import ConfirmDialog from '../components/common/ConfirmDialog';
 const UsersPage: React.FC = () => {
   const {
     users,
-    selectedUsers,
     loading,
     error,
     meta,
     fetchUsers,
-    handleSelectAll,
-    handleSelectUser,
     deleteUser,
   } = useUsers();
 
@@ -227,11 +224,7 @@ const UsersPage: React.FC = () => {
               handleDeleteClick(user);
             }}
           >
-            {isDeleting && userToDelete?._id === user._id ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <Trash size={18} />
-            )}
+            <Trash size={18} />
           </button>
         </div>
       ),
@@ -256,14 +249,16 @@ const UsersPage: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <UserFilters
+          filters={filters}
+          onFiltersChange={setFilters}
+          totalItems={meta.totalItems}
+        />
+
         <Table<User>
           data={users}
           columns={columns}
           isLoading={loading}
-          selectable
-          selectedIds={selectedUsers}
-          onSelectAll={handleSelectAll}
-          onSelectItem={handleSelectUser}
         />
 
         <Pagination
@@ -283,28 +278,27 @@ const UsersPage: React.FC = () => {
       {isSelectDeviceModalOpen && (
         <SelectDeviceModal
           onSelect={handleDeviceSelect}
-          onClose={() => {
-            setIsSelectDeviceModalOpen(false);
-            setRequestStatus({ loading: false, error: null, success: false });
-          }}
+          onClose={() => setIsSelectDeviceModalOpen(false)}
           registrationType={registrationType}
           requestStatus={requestStatus}
         />
       )}
 
-      <ConfirmDialog
-        isOpen={showDeleteConfirm}
-        title="Delete User"
-        message={userToDelete ? renderDeleteConfirmMessage(userToDelete) : ''}
-        confirmLabel="Delete User"
-        cancelLabel="Cancel"
-        isLoading={isDeleting}
-        onConfirm={handleConfirmDelete}
-        onCancel={() => {
-          setShowDeleteConfirm(false);
-          setUserToDelete(null);
-        }}
-      />
+      {showDeleteConfirm && userToDelete && (
+        <ConfirmDialog
+          isOpen={showDeleteConfirm}
+          title="Delete User"
+          message={renderDeleteConfirmMessage(userToDelete)}
+          confirmLabel="Delete User"
+          cancelLabel="Cancel"
+          isLoading={isDeleting}
+          onConfirm={handleConfirmDelete}
+          onCancel={() => {
+            setShowDeleteConfirm(false);
+            setUserToDelete(null);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -12,8 +12,15 @@
 #include <MFRC522Debug.h>
 #include <WebServer.h>
 #include <EEPROM.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 #include "secret.h"
 #include "fp_lib.h"
+
+#define LCD_SDA 4
+#define LCD_SCL 5
+#define LCD_ADDR 0x27  
+LiquidCrystal_I2C lcd(LCD_ADDR, 16, 2); 
 
 // EEPROM configs
 #define EEPROM_SIZE 96
@@ -59,6 +66,30 @@ String fingerAttendanceTopic;
 String cardAttendanceTopic;
 String cardRegistrationResultTopic;
 String fingerprintDeletionResultTopic;
+String attendanceNotificationTopic;
+
+// Add new variables for attendance response tracking
+bool waitingForAttendanceResponse = false;
+unsigned long lastAttendanceTime = 0;
+const unsigned long ATTENDANCE_TIMEOUT = 5000; // timeout 5 seconds
+
+// Add variable for LCD state tracking
+String currentLCDText = "";
+
+// Add LCD helper function
+void updateLCD(const String& line1, const String& line2 = "") {
+  String newText = line1 + line2;
+  if (newText != currentLCDText) {  // Only update when content changes
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(line1);
+    if (line2.length() > 0) {
+      lcd.setCursor(0, 1);
+      lcd.print(line2);
+    }
+    currentLCDText = newText;
+  }
+}
 
 // WiFi setup functions
 void saveCredentials(const String& ssid, const String& password) {
@@ -129,6 +160,9 @@ bool connectToWiFi() {
   if (savedSSID.length() > 0 && savedPassword.length() > 0) {
     WiFi.begin(savedSSID.c_str(), savedPassword.c_str());
     Serial.print("Connecting to WiFi");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Connecting WiFi");
     unsigned long startAttempt = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
       Serial.print(".");
@@ -154,6 +188,13 @@ void setup(){
   Serial.begin(9600);
   EEPROM.begin(EEPROM_SIZE);
   delay(500);
+
+  Wire.begin(LCD_SDA, LCD_SCL);
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
   
   Serial.println("Starting device initialization...");
   
@@ -168,6 +209,7 @@ void setup(){
     importFingerTopic = "import-fingerprint/" + macAddress;
     addCardTopic = "add-cardnumber/" + macAddress;
     String attendedSuccessTopic = "attended-success/" + macAddress;
+    attendanceNotificationTopic = "attendance-noti/" + macAddress;
 
     fingerAttendanceTopic = "finger_attendance/" + macAddress;
     cardAttendanceTopic = "card_attendance/" + macAddress;
@@ -198,7 +240,7 @@ void setup(){
     mqtt_client.subscribe(attendedSuccessTopic.c_str());
     mqtt_client.subscribe(importFingerTopic.c_str());
     mqtt_client.subscribe(addCardTopic.c_str());
-    
+    mqtt_client.subscribe(attendanceNotificationTopic.c_str());
     // Initialize fingerprint sensor
     while (!Serial); 
     delay(100);
@@ -446,6 +488,11 @@ void callback(char *topic, byte *payload, unsigned int length) {
   
   if (strcmp(topic, addCardTopic.c_str()) == 0)  {
     Serial.println("Starting card registration process...");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Scan Your Card");
+    lcd.setCursor(0,1);
+    lcd.print("To Register");
     
     // Parse JSON message
     DynamicJsonDocument outerDoc(512);
@@ -484,7 +531,7 @@ void callback(char *topic, byte *payload, unsigned int length) {
         // Direct format
         currentUserId = outerDoc["userId"].as<String>();
       } else {
-         // Use raw message if no recognizable structure
+        // Use raw message if no recognizable structure
         currentUserId = String(message);
       }
     }
@@ -497,10 +544,39 @@ void callback(char *topic, byte *payload, unsigned int length) {
     } else {
       Serial.println("No valid user ID found in message");
     }
-  }
+}
 
   if (strcmp(topic, emptyDatabaseTopic.c_str()) == 0) {
     deleteAllModels();
+  }
+
+  if (strstr(topic, attendanceNotificationTopic.c_str()) != NULL) {
+    // Parse JSON message
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, message);
+    
+    if (error) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+      return;
+    }
+
+    // Get data from message
+    if (doc.containsKey("data")) {
+      const char* notificationData = doc["data"];
+      
+      // Display on LCD
+      updateLCD(notificationData);
+      
+      // Reset waiting state
+      waitingForAttendanceResponse = false;
+      
+      // Delay to let user read the message
+      delay(3000);
+      
+      // Return to default state
+      updateLCD("Place Finger");
+    }
   }
 }
 
@@ -518,6 +594,7 @@ void reconnect() {
       mqtt_client.subscribe(("attended-success/" + macAddress).c_str());
       mqtt_client.subscribe(importFingerTopic.c_str());
       mqtt_client.subscribe(addCardTopic.c_str());
+      mqtt_client.subscribe(attendanceNotificationTopic.c_str());
     } else {
       Serial.print("Failed to connect, state: ");
       Serial.println(mqtt_client.state());
@@ -540,17 +617,24 @@ uint8_t getFingerprintID() {
   switch (p) {
     case FINGERPRINT_OK:
       Serial.println("Image taken");
+      updateLCD("Processing...");
       break;
     case FINGERPRINT_NOFINGER:
+      if (!waitingForAttendanceResponse) {
+        updateLCD("Place Finger");
+      }
       return p;
     case FINGERPRINT_PACKETRECIEVEERR:
       Serial.println("Communication error");
+      updateLCD("Error!", "Try Again");
       return p;
     case FINGERPRINT_IMAGEFAIL:
       Serial.println("Imaging error");
+      updateLCD("Imaging Error!");
       return p;
     default:
       Serial.println("Unknown error");
+      updateLCD("Unknown Error!");
       return p;
   }
 
@@ -576,27 +660,30 @@ uint8_t getFingerprintID() {
       return p;
   }
 
-  // OK converted!
   p = finger.fingerSearch();
   if (p == FINGERPRINT_OK) {
     Serial.println("Found a print match!");
+    updateLCD("Match Found!", "ID #" + String(finger.fingerID));
+
+    char fingerIDStr[5];
+    itoa(finger.fingerID, fingerIDStr, 10);
+    mqtt_client.publish(fingerAttendanceTopic.c_str(), fingerIDStr);
+    
+    waitingForAttendanceResponse = true;
+    lastAttendanceTime = millis();
   } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
     Serial.println("Communication error");
+    updateLCD("Comm Error!");
     return p;
   } else if (p == FINGERPRINT_NOTFOUND) {
     Serial.println("Did not find a match");
+    updateLCD("No Match Found!");
+    delay(3000);
     return p;
   } else {
     Serial.println("Unknown error");
     return p;
   }
-
-  Serial.print("Found ID #"); Serial.print(finger.fingerID);
-  Serial.print(" with confidence of "); Serial.println(finger.confidence);
-
-  char fingerIDStr[5];
-  itoa(finger.fingerID, fingerIDStr, 10);
-  mqtt_client.publish(fingerAttendanceTopic.c_str(), fingerIDStr);
 
   return finger.fingerID;
 }
@@ -655,6 +742,12 @@ uint8_t enrollFingerprint() {
 bool getFingerprintEnroll(uint8_t id) {
   int p = -1;
   Serial.println("Waiting for valid finger to enroll");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Place finger");
+  lcd.setCursor(0, 1);
+  lcd.print("to enroll #");
+  lcd.print(id);
   
   while (p != FINGERPRINT_OK) {
     p = finger.getImage();
@@ -697,6 +790,9 @@ bool getFingerprintEnroll(uint8_t id) {
   }
 
   Serial.println("Remove finger");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Remove Finger");
   delay(2000);
   p = 0;
   while (p != FINGERPRINT_NOFINGER) {
@@ -705,6 +801,11 @@ bool getFingerprintEnroll(uint8_t id) {
   }
 
   Serial.println("Place same finger again");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Place Same");
+  lcd.setCursor(0, 1);
+  lcd.print("Finger Again");
   p = -1;
   while (p != FINGERPRINT_OK) {
     p = finger.getImage();
@@ -747,6 +848,13 @@ bool getFingerprintEnroll(uint8_t id) {
   }
   delay(5000);
   Serial.println("Fingerprint enrolled successfully!");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Enrollment OK!");
+  lcd.setCursor(0, 1);
+  lcd.print("ID #");
+  lcd.print(id);
+  delay(2000);
   return true;
 }
 
@@ -892,7 +1000,7 @@ uint8_t uploadFingerprintTemplate(const char* hexData, uint16_t id) {
 }
 
 void sendFingerDataToServer(String userId, uint8_t fingerId) {
-  const char *server_url = "http://192.168.100.82:3000/users/add-fingerprint";
+  const char *server_url = "http://10.55.70.105:3000/users/add-fingerprint";
   HTTPClient http;
   
   http.begin(server_url);
@@ -937,7 +1045,7 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
 void getTemplateFromServerWithUserId(String userId, uint16_t fingerId) {
   HTTPClient http;
   
-  String url = "http://192.168.100.82:3000/users/" + userId + "/get-finger-data";
+  String url = "http://10.55.70.105:3000/users/" + userId + "/get-finger-data";
   
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
@@ -995,7 +1103,7 @@ void deleteAllModels() {
 
 void sendCardNumberToServer(String userId, String cardNumber) {
   HTTPClient http;
-  const char *server_url = "http://192.168.100.82:3000/users/add-cardNumber";
+  const char *server_url = "http://10.55.70.105:3000/users/add-cardNumber";
   http.begin(server_url);
   http.addHeader("Content-Type", "application/json");
   
@@ -1035,13 +1143,13 @@ void sendCardNumberToServer(String userId, String cardNumber) {
 
 void loop() {
   if (isAPMode) {
-    // Handle web server in AP mode
+    updateLCD("AP Mode Active", "ESP32_Config");
     server.handleClient();
     return;
   }
   
-  if (!WiFi.isConnected()) {  
-    Serial.println("WiFi disconnected, reconnecting...");
+  if (!WiFi.isConnected()) {
+    updateLCD("WiFi Lost!", "Reconnecting...");
     String savedSSID, savedPassword;
     loadCredentials(savedSSID, savedPassword);
   
@@ -1049,9 +1157,9 @@ void loop() {
       WiFi.begin(savedSSID.c_str(), savedPassword.c_str());
       unsigned long startAttempt = millis();
       while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
-      Serial.print(".");
-      delay(500);
-    }
+        Serial.print(".");
+        delay(500);
+      }
     
       if (WiFi.status() != WL_CONNECTED) {
         Serial.println("\nFailed to reconnect, switching to AP mode");
@@ -1059,7 +1167,7 @@ void loop() {
         return;
       }
     
-    Serial.println("WiFi reconnected");
+      Serial.println("WiFi reconnected");
     } else {
       Serial.println("No saved credentials, switching to AP mode");
       startAPMode();
@@ -1068,10 +1176,18 @@ void loop() {
   }
 
   if (!mqtt_client.connected()) {
+    updateLCD("MQTT Lost!", "Reconnecting...");
     reconnect();
   }
   
-  mqtt_client.loop(); 
+  mqtt_client.loop();
+
+  // Check timeout for attendance response
+  if (waitingForAttendanceResponse && (millis() - lastAttendanceTime > ATTENDANCE_TIMEOUT)) {
+    waitingForAttendanceResponse = false;
+    updateLCD("Place Finger");
+  }
+  
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
     String uidString = "";
     for (byte i = 0; i < mfrc522.uid.size; i++) {
@@ -1081,22 +1197,22 @@ void loop() {
       uidString += String(mfrc522.uid.uidByte[i], HEX);
     }
     
-    Serial.print("Card UID: ");
-    MFRC522Debug::PrintUID(Serial, (mfrc522.uid));
-    Serial.println();
-    Serial.println("Card number: " + uidString);
-    
     if (waitingForCardScan && currentUserId != "") {
-      Serial.println("Registering card for user: " + currentUserId);
+      updateLCD("Registering Card");
       sendCardNumberToServer(currentUserId, uidString);
     } else {
-      Serial.println("Publishing to card_attendance topic");  // Fixed missing double quote
+      updateLCD("Processing...");
       mqtt_client.publish(cardAttendanceTopic.c_str(), uidString.c_str());
+      
+      waitingForAttendanceResponse = true;
+      lastAttendanceTime = millis();
     }
     
+    delay(2000);
     mfrc522.PICC_HaltA();
     mfrc522.PCD_StopCrypto1();
   }
+
   getFingerprintID();
-  delay(3000); 
+  delay(100);  // Increased from 50ms to 100ms
 }

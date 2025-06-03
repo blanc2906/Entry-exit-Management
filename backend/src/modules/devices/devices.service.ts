@@ -450,4 +450,25 @@ export class DevicesService {
       throw error;
     }
   }
+
+  async getAllUserNotInDevice(deviceId: string) {
+    try {
+      const device = await this.deviceModel.findById(deviceId);
+      if (!device) {
+        throw new NotFoundException('Device not found');
+      }
+
+      // Get all users who are not in the device's users array
+      const usersNotInDevice = await this.userModel.find({
+        _id: { $nin: device.users }
+      }).select('name email userId');
+
+      return usersNotInDevice;
+    } catch (error) {
+      throw new HttpException(
+        `Failed to get users not in device: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+  }
 }

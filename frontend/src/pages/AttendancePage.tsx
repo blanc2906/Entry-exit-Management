@@ -1,92 +1,107 @@
-import React, { useState } from 'react';
-import { Calendar, User, Cpu, Download, Search } from 'lucide-react';
-
-interface DateRange {
-  from: string;
-  to: string;
-}
+import React, { useState, useEffect } from 'react';
+import { historyService, History } from '../services/history.service';
 
 interface Filters {
-  dateRange: DateRange;
-  userId: string;
-  deviceId: string;
-}
-
-interface AttendanceRecord {
-  date: string;
-  user: string;
-  timeIn: string;
-  timeOut: string | null;
-  device: string;
-  status: 'complete' | 'incomplete';
+  dateRange: {
+    from: string;
+    to: string;
+  };
+  page: number;
 }
 
 const AttendancePage: React.FC = () => {
+  const [loading, setLoading] = useState(false);
+  const [histories, setHistories] = useState<History[]>([]);
+  const [totalPages, setTotalPages] = useState(0);
   const [filters, setFilters] = useState<Filters>({
     dateRange: {
-      from: '2024-01-15',
-      to: '2024-01-15',
+      from: '',
+      to: ''
     },
-    userId: '',
-    deviceId: '',
+    page: 1
   });
 
-  // Mock data for demonstration
-  const attendanceRecords: AttendanceRecord[] = [
-    {
-      date: '2024-01-15',
-      user: 'John Doe',
-      timeIn: '08:30',
-      timeOut: '17:30',
-      device: 'Dev A',
-      status: 'complete',
-    },
-    {
-      date: '2024-01-15',
-      user: 'Jane S.',
-      timeIn: '08:35',
-      timeOut: '17:25',
-      device: 'Dev B',
-      status: 'complete',
-    },
-    {
-      date: '2024-01-15',
-      user: 'Bob J.',
-      timeIn: '09:00',
-      timeOut: null,
-      device: 'Dev A',
-      status: 'incomplete',
-    },
-  ];
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      
+      // Only include date filters if both dates are selected
+      const params: any = {
+        page: filters.page
+      };
+
+      if (filters.dateRange.from && filters.dateRange.to) {
+        const startDate = new Date(filters.dateRange.from);
+        startDate.setHours(0, 0, 0, 0);
+        
+        const endDate = new Date(filters.dateRange.to);
+        endDate.setHours(23, 59, 59, 999);
+
+        params.startDate = startDate.toISOString();
+        params.endDate = endDate.toISOString();
+      }
+
+      const response = await historyService.getHistories(params);
+
+      setHistories(response.histories);
+      setTotalPages(response.totalPages);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   const handleExport = () => {
     // Implementation for export functionality
     console.log('Exporting attendance data...');
   };
 
+  const handleSearch = () => {
+    setFilters(prev => ({ ...prev, page: 1 }));
+    fetchData();
+  };
+
+  const handleReset = () => {
+    setFilters({
+      dateRange: {
+        from: '',
+        to: ''
+      },
+      page: 1
+    });
+    // After resetting filters, fetch without date range
+    fetchData();
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Attendance History</h1>
+    <div className="p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-semibold">Attendance History</h1>
         <button
           onClick={handleExport}
-          className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
         >
-          <Download size={18} className="mr-2" />
+          <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="none">
+            <path d="M12 15V3M12 15L8 11M12 15L16 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M2 17L2.621 19.485C2.72915 19.9177 2.97882 20.3018 3.33033 20.5763C3.68184 20.8508 4.11501 20.9999 4.561 21H19.439C19.885 20.9999 20.3182 20.8508 20.6697 20.5763C21.0212 20.3018 21.2708 19.9177 21.379 19.485L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
           Export Report
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Date Range Filter */}
-          <div className="space-y-2">
-            <label className="flex items-center text-sm font-medium text-gray-700">
-              <Calendar size={16} className="mr-2" />
+      <div className="bg-white rounded-lg p-6 mb-6">
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              <span className="inline-block mr-2">📅</span>
               Date Range
             </label>
-            <div className="flex space-x-2">
+            <div className="flex gap-2">
               <input
                 type="date"
                 value={filters.dateRange.from}
@@ -94,7 +109,7 @@ const AttendancePage: React.FC = () => {
                   ...filters,
                   dateRange: { ...filters.dateRange, from: e.target.value }
                 })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
               <input
                 type="date"
@@ -103,126 +118,178 @@ const AttendancePage: React.FC = () => {
                   ...filters,
                   dateRange: { ...filters.dateRange, to: e.target.value }
                 })}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
           </div>
-
-          {/* User Filter */}
-          <div className="space-y-2">
-            <label className="flex items-center text-sm font-medium text-gray-700">
-              <User size={16} className="mr-2" />
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              <span className="inline-block mr-2">👤</span>
               User
             </label>
             <select
-              value={filters.userId}
-              onChange={(e) => setFilters({ ...filters, userId: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              disabled
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
             >
               <option value="">All Users</option>
-              <option value="1">John Doe</option>
-              <option value="2">Jane Smith</option>
-              <option value="3">Bob Johnson</option>
             </select>
           </div>
-
-          {/* Device Filter */}
-          <div className="space-y-2">
-            <label className="flex items-center text-sm font-medium text-gray-700">
-              <Cpu size={16} className="mr-2" />
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              <span className="inline-block mr-2">🖥️</span>
               Device
             </label>
             <select
-              value={filters.deviceId}
-              onChange={(e) => setFilters({ ...filters, deviceId: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              disabled
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed"
             >
               <option value="">All Devices</option>
-              <option value="1">Dev A</option>
-              <option value="2">Dev B</option>
             </select>
           </div>
         </div>
-
-        {/* Search and Reset */}
-        <div className="flex justify-end space-x-3 mt-4">
+        <div className="flex justify-end gap-2">
           <button
-            onClick={() => setFilters({
-              dateRange: { from: '', to: '' },
-              userId: '',
-              deviceId: '',
-            })}
-            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            onClick={handleReset}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
           >
             Reset Filters
           </button>
           <button
-            className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            onClick={handleSearch}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
           >
-            <Search size={18} className="mr-2" />
             Search
           </button>
         </div>
       </div>
 
-      {/* Attendance Table */}
-      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  User
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Time In
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Time Out
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Device
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {attendanceRecords.map((record, index) => (
-                <tr key={index} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {record.date}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {record.user}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {record.timeIn}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {record.timeOut || '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {record.device}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                      record.status === 'complete'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
-                      {record.status === 'complete' ? 'Complete' : 'Incomplete'}
-                    </span>
-                  </td>
+      <div className="bg-white rounded-lg overflow-hidden">
+        {loading ? (
+          <div className="flex justify-center items-center h-32">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          </div>
+        ) : (
+          <>
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    DATE
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    USER INFO
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    CHECK IN
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    CHECK OUT
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    STATUS
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {histories.map((record) => (
+                  <tr key={record._id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {new Date(record.date).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900 font-medium">{record.user.name}</div>
+                      <div className="text-sm text-gray-500">ID: {record.user.userId}</div>
+                      <div className="text-sm text-gray-500">{record.user.email}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">{record.time_in}</div>
+                      <div className="text-sm text-gray-500">
+                        Device: {record.check_in_device.description}
+                        <div className="text-xs text-gray-400">({record.check_in_device.deviceMac})</div>
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        Method: <span className="capitalize">{record.check_in_auth_method}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      {record.time_out ? (
+                        <>
+                          <div className="text-sm text-gray-900">{record.time_out}</div>
+                          <div className="text-sm text-gray-500">
+                            Device: {record.check_out_device?.description}
+                            <div className="text-xs text-gray-400">({record.check_out_device?.deviceMac})</div>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            Method: <span className="capitalize">{record.check_out_auth_method}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-sm text-gray-500">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                        record.time_out
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {record.time_out ? 'Complete' : 'Incomplete'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="px-6 py-3 flex justify-between items-center border-t border-gray-200">
+              <div className="text-sm text-gray-700">
+                Page {filters.page} of {totalPages}
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => {
+                    setFilters(prev => ({ ...prev, page: 1 }));
+                    fetchData();
+                  }}
+                  disabled={filters.page === 1}
+                  className="px-2 py-1 text-sm text-gray-600 hover:text-gray-900 disabled:text-gray-400"
+                >
+                  First
+                </button>
+                <button
+                  onClick={() => {
+                    setFilters(prev => ({ ...prev, page: prev.page - 1 }));
+                    fetchData();
+                  }}
+                  disabled={filters.page === 1}
+                  className="px-2 py-1 text-sm text-gray-600 hover:text-gray-900 disabled:text-gray-400"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => {
+                    setFilters(prev => ({ ...prev, page: prev.page + 1 }));
+                    fetchData();
+                  }}
+                  disabled={filters.page === totalPages}
+                  className="px-2 py-1 text-sm text-gray-600 hover:text-gray-900 disabled:text-gray-400"
+                >
+                  Next
+                </button>
+                <button
+                  onClick={() => {
+                    setFilters(prev => ({ ...prev, page: totalPages }));
+                    fetchData();
+                  }}
+                  disabled={filters.page === totalPages}
+                  className="px-2 py-1 text-sm text-gray-600 hover:text-gray-900 disabled:text-gray-400"
+                >
+                  Last
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

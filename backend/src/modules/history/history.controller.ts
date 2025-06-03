@@ -1,3 +1,4 @@
+// src/modules/history/history.controller.ts
 import { Controller, Get, Inject, Logger, Query } from "@nestjs/common";
 import { ClientMqtt, Ctx, MessagePattern, MqttContext, Payload } from "@nestjs/microservices";
 import { UsersService } from "../users/users.service";
@@ -8,7 +9,6 @@ import { ATTENDANCE_NOTIFICATION } from "src/shared/constants/mqtt.constant";
 import { DevicesService } from "../devices/devices.service";
 import { FindAllHistoryDto } from "./dto/find-all-history.dto";
 
-
 @Controller('history')
 export class HistoryController {
     private readonly logger = new Logger(HistoryController.name);
@@ -17,60 +17,122 @@ export class HistoryController {
         private readonly usersService: UsersService,
         private readonly historyService: HistoryService,
         private readonly DeviceService: DevicesService,
-         @Inject('MQTT_CLIENT') private readonly mqttClient: ClientMqtt
-    ){}
+        @Inject('MQTT_CLIENT') private readonly mqttClient: ClientMqtt
+    ) {}
 
     @MessagePattern('finger_attendance/#')
     async handleFingerAttendance(@Payload() data: number, @Ctx() context: MqttContext) {
-        const topic = context.getTopic();
-        console.log(data);
-        const deviceMac = topic.split('/')[1];
-        console.log(deviceMac);
-        const device = await this.DeviceService.getDeviceByMac(deviceMac);
-        console.log(device._id.toString());
-        
-        const user = await this.usersService.getUserByFingerId(data,device._id.toString());
-        await this.mqttClient.emit(ATTENDANCE_NOTIFICATION, user.name);
+        try {
+            const topic = context.getTopic();
+            const deviceMac = topic.split('/')[1];
+            const device = await this.DeviceService.getDeviceByMac(deviceMac);
+            
+            // Kiểm tra device
+            if (!device) {
+                this.logger.error(`Device not found with MAC: ${deviceMac}`);
+                await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Invalid Device');
+                return;
+            }
 
-        return this.historyService.processAttendance(user._id.toString());
+            const user = await this.usersService.getUserByFingerId(data, device._id.toString());
+            
+            // Kiểm tra user
+            if (!user) {
+                this.logger.error(`User not found with finger ID: ${data}`);
+                await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Fingerprint Not Registered');
+                return;
+            }
+
+            // Nếu mọi thứ OK, gửi tên user và lưu lịch sử
+            await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, user.name);
+            return await this.historyService.processAttendance(
+                user._id.toString(),
+                device._id.toString(),
+                'fingerprint'
+            );
+
+        } catch (error) {
+            this.logger.error(`Error handling fingerprint attendance: ${error.message}`);
+            // Gửi thông báo lỗi chung nếu có lỗi không xác định
+            const deviceMac = context.getTopic().split('/')[1];
+            await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'System Error');
+            throw error;
+        }
     }
 
     @MessagePattern('card_attendance/#')
-    async handleCardAttendance(@Payload() data: string, @Ctx() context : MqttContext) {
-        const user = await this.usersService.getUserByCardNumber(data);
-        await this.mqttClient.emit(ATTENDANCE_NOTIFICATION,user.name) 
+    async handleCardAttendance(@Payload() data: string, @Ctx() context: MqttContext) {
+        try {
+            const topic = context.getTopic();
+            const deviceMac = topic.split('/')[1];
+            const device = await this.DeviceService.getDeviceByMac(deviceMac);
+            
+            // Kiểm tra device
+            if (!device) {
+                this.logger.error(`Device not found with MAC: ${deviceMac}`);
+                await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Invalid Device');
+                return;
+            }
 
-        const topic = context.getTopic();
-        console.log(data);
-        const deviceMac = topic.split('/')[1];
-        console.log(deviceMac);
-        const device = await this.DeviceService.getDeviceByMac(deviceMac);
-        console.log(device._id.toString());
+            const user = await this.usersService.getUserByCardNumber(data);
+            
+            // Kiểm tra user
+            if (!user) {
+                this.logger.error(`User not found with card number: ${data}`);
+                await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Card Not Registered');
+                return;
+            }
 
-        return this.historyService.processCardAttendance(user._id.toString(), deviceMac);
+            // Kiểm tra user có trong device không
+            const isUserInDevice = device.users.some(
+                userId => userId.toString() === user._id.toString()
+            );
+
+            if (!isUserInDevice) {
+                this.logger.warn(`User ${user.name} is not registered with device ${deviceMac}`);
+                await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'User Not Authorized');
+                return;
+            }
+
+            // Nếu mọi thứ OK, gửi tên user và lưu lịch sử
+            await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, user.name);
+            return await this.historyService.processAttendance(
+                user._id.toString(),
+                device._id.toString(),
+                'card'
+            );
+
+        } catch (error) {
+            this.logger.error(`Error handling card attendance: ${error.message}`);
+            // Gửi thông báo lỗi chung nếu có lỗi không xác định
+            const deviceMac = context.getTopic().split('/')[1];
+            await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Not Authorized8');
+            throw error;
+        }
     }
 
-@Get('findAll')
-  async findAll(@Query() findAllHistoryDto: FindAllHistoryDto) {
-    const { 
-      page, 
-      limit, 
-      search, 
-      deviceId, 
-      userId, 
-      startDate, 
-      endDate 
-    } = findAllHistoryDto;
-    
-    return await this.historyService.findAll(
-      page,
-      limit,
-      search,
-      deviceId,
-      userId,
-      startDate,
-      endDate
-    );
-  }
+    @Get('findAll')
+    async findAll(@Query() findAllHistoryDto: FindAllHistoryDto) {
+        const {
+            page,
+            limit,
+            search,
+            deviceId,
+            userId,
+            startDate,
+            endDate,
+            authMethod
+        } = findAllHistoryDto;
 
+        return await this.historyService.findAll(
+            page,
+            limit,
+            search,
+            deviceId,
+            userId,
+            startDate,
+            endDate,
+            authMethod as 'fingerprint' | 'card'
+        );
+    }
 }

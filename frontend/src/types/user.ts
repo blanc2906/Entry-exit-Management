@@ -1,12 +1,13 @@
 export interface User {
   _id: string;
-  userId: string;
   name: string;
-  email?: string;
+  email: string;
+  userId?: string;
+  createdAt?: string;
+  updatedAt?: string;
   fingerId?: number;
   cardNumber?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  fingerTemplate?: string;
 }
 
 export interface UsersResponse {

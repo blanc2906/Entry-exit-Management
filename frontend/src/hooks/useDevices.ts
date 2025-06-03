@@ -5,7 +5,6 @@ import { AxiosError } from 'axios';
 
 export const useDevices = () => {
   const [devices, setDevices] = useState<Device[]>([]);
-  const [selectedDevices, setSelectedDevices] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState({
@@ -66,25 +65,11 @@ export const useDevices = () => {
     }
   }, []);
 
-  const handleSelectAll = useCallback((checked: boolean) => {
-    setSelectedDevices(checked ? devices.map(device => device._id) : []);
-  }, [devices]);
-
-  const handleSelectDevice = useCallback((deviceId: string) => {
-    setSelectedDevices(prev => {
-      if (prev.includes(deviceId)) {
-        return prev.filter(id => id !== deviceId);
-      }
-      return [...prev, deviceId];
-    });
-  }, []);
-
   const deleteDevice = useCallback(async (deviceId: string) => {
     try {
       setError(null);
       await deviceService.deleteDevice(deviceId);
       setDevices(prev => prev.filter(device => device._id !== deviceId));
-      setSelectedDevices(prev => prev.filter(id => id !== deviceId));
     } catch (err) {
       handleError(err);
     }
@@ -92,14 +77,11 @@ export const useDevices = () => {
 
   return {
     devices,
-    selectedDevices,
     loading,
     error,
     meta,
     fetchDevices,
     createDevice,
-    handleSelectAll,
-    handleSelectDevice,
     deleteDevice,
   };
 }; 
