@@ -202,6 +202,8 @@ void setup(){
   if (connectToWiFi()) {
     macAddress = WiFi.macAddress();
 
+    String lwtTopic = "device-status/" + macAddress;
+
     verifyDeviceTopic = "verify_device_" + macAddress;
     deleteFingerTopic = "delete-fingerprint/" + macAddress;
     emptyDatabaseTopic = "empty-database/" + macAddress;
@@ -219,13 +221,23 @@ void setup(){
     esp_client.setCACert(ca_cert);
     mqtt_client.setServer(mqtt_broker, mqtt_port);
     mqtt_client.setCallback(callback);
+    
+     String client_id = "esp32-client-" + macAddress;
 
     while (!mqtt_client.connected()) {
-      String client_id = "esp32-client-";
-      client_id += String(WiFi.macAddress());
       Serial.printf("The client %s connects to the public MQTT broker\n", client_id.c_str());
-      if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
+      if (mqtt_client.connect(
+            client_id.c_str(), 
+            mqtt_username, 
+            mqtt_password,
+            lwtTopic.c_str(),    // LWT topic
+            1,                    // QoS
+            true,                 // retain
+            "offline"             // LWT message
+          )) {
         Serial.println("Public HiveMQ MQTT broker connected");
+        // Publish online status
+        mqtt_client.publish(lwtTopic.c_str(), "online", true);
       } else {
         Serial.print("Failed with state ");
         Serial.print(mqtt_client.state());
@@ -580,13 +592,29 @@ void callback(char *topic, byte *payload, unsigned int length) {
   }
 }
 
+
 void reconnect() {
   while (!mqtt_client.connected() && !isAPMode) {
-    String client_id = "esp32-client-";
-    client_id += String(WiFi.macAddress());
+    String client_id = "esp32-client-" + macAddress;
+    String lwtTopic = "device-status/" + macAddress;
+
     Serial.printf("Reconnecting to MQTT as %s\n", client_id.c_str());
-    if (mqtt_client.connect(client_id.c_str(), mqtt_username, mqtt_password)) {
+
+    if (mqtt_client.connect(
+          client_id.c_str(),
+          mqtt_username,
+          mqtt_password,
+          lwtTopic.c_str(),  // LWT topic
+          1,                 // QoS
+          true,              // retain
+          "offline"          // LWT message
+        )) {
+
       Serial.println("Reconnected to MQTT broker");
+
+      // Sau khi kết nối thành công → cập nhật trạng thái online
+      mqtt_client.publish(lwtTopic.c_str(), "online", true);
+
       mqtt_client.subscribe(verifyDeviceTopic.c_str());
       mqtt_client.subscribe(deleteFingerTopic.c_str());
       mqtt_client.subscribe(emptyDatabaseTopic.c_str());
@@ -595,6 +623,7 @@ void reconnect() {
       mqtt_client.subscribe(importFingerTopic.c_str());
       mqtt_client.subscribe(addCardTopic.c_str());
       mqtt_client.subscribe(attendanceNotificationTopic.c_str());
+
     } else {
       Serial.print("Failed to connect, state: ");
       Serial.println(mqtt_client.state());
@@ -602,6 +631,7 @@ void reconnect() {
     }
   }
 }
+
 
 uint8_t readnumber(void) {
   uint8_t num = 0;

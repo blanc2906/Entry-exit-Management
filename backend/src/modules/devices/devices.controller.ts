@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Inject, OnModuleInit
 import { DevicesService } from './devices.service';
 import { CreateDeviceDto } from './dto/create-device.dto';
 import { UpdateDeviceDto } from './dto/update-device.dto';
-import { ClientMqtt } from '@nestjs/microservices';
+import { ClientMqtt, Ctx, MessagePattern, MqttContext, Payload } from '@nestjs/microservices';
 import { EventPattern } from '@nestjs/microservices';
 import { FindAllDeviceDto } from './dto/find-all-device.dto';
 
@@ -82,4 +82,17 @@ export class DevicesController implements OnModuleInit {
   async getAllUserNotInDevice(@Param('deviceId') deviceId: string) {
   return this.devicesService.getAllUserNotInDevice(deviceId);
 }
+
+
+  @MessagePattern('device-status/#')
+  async updateDevcieSate(@Payload() data : string, @Ctx() context : MqttContext){
+    const topic = context.getTopic();
+    const deviceMac = topic.split('/')[1];
+    const device = await this.devicesService.getDeviceByMac(deviceMac);
+    if(!device){
+      return; 
+    }
+    return this.devicesService.updateDeviceStatus(device._id.toString(),data);
+  }
+
 }

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
 import { Model, Types } from "mongoose";
 import { User, UserDocument } from "src/schema/user.schema";
 import { CreateUserDto } from "./dto/create-user.dto";
@@ -153,6 +153,10 @@ export class UsersService {
     if(!device){
       throw new Error('Device not found');
     }
+
+    if (device.status !== "online") {
+      throw new HttpException('Device is offline, cannot connect', HttpStatus.BAD_REQUEST);
+    }
     const deviceMac = device.deviceMac;
 
     await this.mqttClient.emit(this.getTopic(REQUEST_ADD_FINGERPRINT, deviceMac), userId);
@@ -239,6 +243,10 @@ export class UsersService {
     const device = await this.deviceModel.findById(deviceId);
     if(!device){
       throw new Error('Device not found');
+    }
+
+    if (device.status !== "online") {
+      throw new HttpException('Device is offline, cannot connect', HttpStatus.BAD_REQUEST);
     }
     const deviceMac = device.deviceMac;
 

@@ -44,7 +44,7 @@ export class DevicesService {
   }
 
     async createDevice(createDeviceDto: CreateDeviceDto) {
-    const { deviceMac, description } = createDeviceDto;
+    const { deviceMac, description, status } = createDeviceDto;
 
     // Kiểm tra xem deviceMac có tồn tại trong DB không
     const existingDevice = await this.deviceModel.findOne({ deviceMac });
@@ -71,6 +71,7 @@ export class DevicesService {
             const newDevice = { 
               deviceMac,
               description,
+              status: status || 'online', // Use provided status or default to 'online'
             };
             const createdDevice = await this.deviceModel.create(newDevice);
             
@@ -165,6 +166,9 @@ export class DevicesService {
       if (!user) {
         throw new NotFoundException('User not found');
       }
+      if (device.status !== "online") {
+        throw new HttpException('Device is offline, cannot connect', HttpStatus.BAD_REQUEST);
+      }
 
       const userObjectId = new Types.ObjectId(userId);
       if (!device.users.some(id => id.equals(userObjectId))) {
@@ -216,6 +220,10 @@ export class DevicesService {
       if (!device) {
         throw new NotFoundException('Device not found');
       }
+
+      if (device.status !== "online") {
+        throw new HttpException('Device is offline, cannot connect', HttpStatus.BAD_REQUEST);
+      }
       if (!user) {
         throw new NotFoundException('User not found');
       }
@@ -259,6 +267,10 @@ export class DevicesService {
       const device = await this.deviceModel.findById(deviceId);
       if (!device) {
         throw new NotFoundException('Device not found');
+      }
+
+      if (device.status !== "online") {
+        throw new HttpException('Device is offline, cannot connect', HttpStatus.BAD_REQUEST);
       }
 
       // Get all users from database
@@ -319,6 +331,10 @@ export class DevicesService {
 
       if (!device) {
         throw new NotFoundException('Device Not Found');
+      }
+
+      if (device.status !== "online") {
+        throw new HttpException('Device is offline, cannot connect', HttpStatus.BAD_REQUEST);
       }
 
       // Xóa tất cả bản ghi trong UserDevice liên quan đến thiết bị này
@@ -470,5 +486,19 @@ export class DevicesService {
         HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
+  }
+
+  async updateDeviceStatus(deviceId: string, status: string) {
+    if (!['online', 'offline'].includes(status)) {
+      throw new HttpException('Invalid status value. Must be either "online" or "offline"', HttpStatus.BAD_REQUEST);
+    }
+
+    const device = await this.deviceModel.findById(deviceId);
+    if (!device) {
+      throw new NotFoundException('Device not found');
+    }
+
+    device.status = status;
+    return await device.save();
   }
 }

@@ -12,6 +12,9 @@ export class Device {
     @Prop({required: true})
     description : string;
 
+    @Prop({ required: true, enum: ['online', 'offline'], default: 'online' })
+    status: string;
+
     @Prop({type : [{type : Types.ObjectId, ref : 'User'}]})
     users : Types.ObjectId[];
 }
