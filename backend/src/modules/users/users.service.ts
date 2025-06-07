@@ -32,7 +32,7 @@ export class UsersService {
   }
   async createUser(createUserDto : CreateUserDto) : Promise<UserDocument> {
     try {
-      // Check if user with the same userId already exists
+
       const existingUser = await this.userModel.findOne({ userId: createUserDto.userId });
       if (existingUser) {
         throw new Error('User with this userId already exists');
@@ -84,23 +84,21 @@ export class UsersService {
 
   async removeUser(userId: string): Promise<{ message: string }> {
     try {
-      // Find user first to get their ID and check if exists
+
       const user = await this.userModel.findById( userId );
       if (!user) {
         throw new Error('User not found');
       }
 
       try {
-        // Get all user-device relationships for this user
+
         const userDevices = await this.userdeviceModel
           .find({ user: user._id })
           .populate<{ device: DeviceDocument }>('device');
 
-        // For each device, send delete fingerprint command
         for (const userDevice of userDevices) {
           const device = userDevice.device;
-          
-          // Send delete fingerprint command to device
+
           await this.mqttClient.emit(
             `${DELETE_FINGERPRINT}/${device.deviceMac}`, 
             JSON.stringify({
@@ -109,16 +107,13 @@ export class UsersService {
           );
         }
 
-        // Remove user-device relationships
         await this.userdeviceModel.deleteMany({ user: user._id });
 
-        // Update devices to remove user from their users array
         await this.deviceModel.updateMany(
           { users: user._id },
           { $pull: { users: user._id } }
         );
 
-        // Delete the user
         await this.userModel.deleteOne({ _id: user._id });
 
         return { 
@@ -170,7 +165,6 @@ export class UsersService {
         throw new Error('User not found');
       }
 
-      // Find device by deviceMac
       const device = await this.deviceModel.findOne({ deviceMac: addFingerprintDto.deviceMac });
       if (!device) {
         throw new Error('Device not found');
@@ -179,7 +173,6 @@ export class UsersService {
       user.fingerTemplate = addFingerprintDto.fingerTemplate;
       user.updatedAt = new Date();
 
-      // Create UserDevice relationship
       const userDevice = new this.userdeviceModel({
         user: user._id,
         device: device._id as Types.ObjectId,
@@ -187,15 +180,13 @@ export class UsersService {
       });
       await userDevice.save();
 
-      // Add device to user's devices array if not already present
       if (!user.devices.includes(device._id as Types.ObjectId)) {
         user.devices.push(device._id as Types.ObjectId);
       }
-      
-      // Add user to device's users array if not already present
+
       if (!device.users.includes(user._id as Types.ObjectId)) {
         device.users.push(user._id as Types.ObjectId);
-        await device.save(); // Save the device document with the updated users array
+        await device.save();
       }
 
       return await user.save();

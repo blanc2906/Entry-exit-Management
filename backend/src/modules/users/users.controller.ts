@@ -4,6 +4,7 @@ import { CreateUserDto } from "./dto/create-user.dto";
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
 import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
 import { FindAllUsersDto } from "./dto/find-all-user.dto";
+import { MessagePattern, Payload } from "@nestjs/microservices";
 
 
 
@@ -41,8 +42,11 @@ export class UsersController {
 
   @Post('add-fingerprint')
   async addFingerprint(@Body() addFingerprintDto : AddFingerprintDto) {
-    return await this.usersService.addFingerprint(addFingerprintDto);
-  }
+    const user = await this.usersService.addFingerprint(addFingerprintDto);
+    return {
+        success: true
+    };
+}
 
   @Get(':userId/get-finger-data')
   addUserToDevice(
@@ -62,5 +66,20 @@ export class UsersController {
   async addCardNumber(@Body() addCardNumberDto : AddCardNumberDto) {
     return await this.usersService.addCardNumber(addCardNumberDto);
   }
+
+  @MessagePattern('fingerprint_registration_result/#')
+  async handleFingerprintRegistrationResult(
+  @Payload() data: {
+    success: boolean;
+    error?: string;
+    userId: string;
+  }
+) {
+  if (data.success) {
+    console.log(`Fingerprint registration successful for user ${data.userId}`);
+  } else {
+    console.log(`Fingerprint registration failed for user ${data.userId}: ${data.error}`);
+  }
+}
 
 }

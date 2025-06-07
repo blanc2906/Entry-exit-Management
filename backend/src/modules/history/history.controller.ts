@@ -26,8 +26,7 @@ export class HistoryController {
             const topic = context.getTopic();
             const deviceMac = topic.split('/')[1];
             const device = await this.DeviceService.getDeviceByMac(deviceMac);
-            
-            // Kiểm tra device
+
             if (!device) {
                 this.logger.error(`Device not found with MAC: ${deviceMac}`);
                 await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Invalid Device');
@@ -35,15 +34,13 @@ export class HistoryController {
             }
 
             const user = await this.usersService.getUserByFingerId(data, device._id.toString());
-            
-            // Kiểm tra user
+
             if (!user) {
                 this.logger.error(`User not found with finger ID: ${data}`);
                 await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Fingerprint Not Registered');
                 return;
             }
 
-            // Nếu mọi thứ OK, gửi tên user và lưu lịch sử
             await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, user.name);
             return await this.historyService.processAttendance(
                 user._id.toString(),
@@ -53,7 +50,6 @@ export class HistoryController {
 
         } catch (error) {
             this.logger.error(`Error handling fingerprint attendance: ${error.message}`);
-            // Gửi thông báo lỗi chung nếu có lỗi không xác định
             const deviceMac = context.getTopic().split('/')[1];
             await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'System Error');
             throw error;
@@ -66,8 +62,7 @@ export class HistoryController {
             const topic = context.getTopic();
             const deviceMac = topic.split('/')[1];
             const device = await this.DeviceService.getDeviceByMac(deviceMac);
-            
-            // Kiểm tra device
+
             if (!device) {
                 this.logger.error(`Device not found with MAC: ${deviceMac}`);
                 await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Invalid Device');
@@ -75,15 +70,13 @@ export class HistoryController {
             }
 
             const user = await this.usersService.getUserByCardNumber(data);
-            
-            // Kiểm tra user
+
             if (!user) {
                 this.logger.error(`User not found with card number: ${data}`);
                 await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Card Not Registered');
                 return;
             }
 
-            // Kiểm tra user có trong device không
             const isUserInDevice = device.users.some(
                 userId => userId.toString() === user._id.toString()
             );
@@ -94,7 +87,6 @@ export class HistoryController {
                 return;
             }
 
-            // Nếu mọi thứ OK, gửi tên user và lưu lịch sử
             await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, user.name);
             return await this.historyService.processAttendance(
                 user._id.toString(),
@@ -104,7 +96,6 @@ export class HistoryController {
 
         } catch (error) {
             this.logger.error(`Error handling card attendance: ${error.message}`);
-            // Gửi thông báo lỗi chung nếu có lỗi không xác định
             const deviceMac = context.getTopic().split('/')[1];
             await this.mqttClient.emit(`${ATTENDANCE_NOTIFICATION}/${deviceMac}`, 'Not Authorized8');
             throw error;

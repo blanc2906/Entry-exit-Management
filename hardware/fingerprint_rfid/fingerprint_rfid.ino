@@ -67,11 +67,13 @@ String cardAttendanceTopic;
 String cardRegistrationResultTopic;
 String fingerprintDeletionResultTopic;
 String attendanceNotificationTopic;
-
+String currentRequestId = "";  
 // Add new variables for attendance response tracking
 bool waitingForAttendanceResponse = false;
 unsigned long lastAttendanceTime = 0;
 const unsigned long ATTENDANCE_TIMEOUT = 5000; // timeout 5 seconds
+const char* FINGERPRINT_REGISTRATION_RESULT = "fingerprint_registration_result/";
+const char* CARD_REGISTRATION_RESULT = "card_registration_result/";
 
 // Add variable for LCD state tracking
 String currentLCDText = "";
@@ -218,6 +220,8 @@ void setup(){
     cardRegistrationResultTopic = "card_registration_result/" + macAddress;
     fingerprintDeletionResultTopic = "fingerprint_deletion_result/" + macAddress;
     // Initialize MQTT only if WiFi is connected
+      String fingerprintResultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+  mqtt_client.subscribe(fingerprintResultTopic.c_str());
     esp_client.setCACert(ca_cert);
     mqtt_client.setServer(mqtt_broker, mqtt_port);
     mqtt_client.setCallback(callback);
@@ -230,10 +234,10 @@ void setup(){
             client_id.c_str(), 
             mqtt_username, 
             mqtt_password,
-            lwtTopic.c_str(),    // LWT topic
-            1,                    // QoS
-            true,                 // retain
-            "offline"             // LWT message
+            lwtTopic.c_str(),    
+            1,                    
+            true,                 
+            "offline"             
           )) {
         Serial.println("Public HiveMQ MQTT broker connected");
         // Publish online status
@@ -559,8 +563,45 @@ void callback(char *topic, byte *payload, unsigned int length) {
 }
 
   if (strcmp(topic, emptyDatabaseTopic.c_str()) == 0) {
-    deleteAllModels();
-  }
+    Serial.println("Received empty database command");
+    Serial.print("Message: ");
+    Serial.println(message);
+    
+    // Parse outer JSON message
+    StaticJsonDocument<512> outerDoc;
+    DeserializationError error = deserializeJson(outerDoc, message);
+    
+    if (error) {
+      Serial.print("Outer JSON parsing failed: ");
+      Serial.println(error.c_str());
+      return;
+    }
+
+    // Get first data object
+    if (outerDoc.containsKey("data")) {
+      JsonObject firstData = outerDoc["data"];
+      
+      // Get second nested data object
+      if (firstData.containsKey("data")) {
+        JsonObject secondData = firstData["data"];
+        
+        // Finally get requestId
+        if (secondData.containsKey("requestId")) {
+          currentRequestId = secondData["requestId"].as<String>();
+          Serial.print("Successfully extracted requestId: ");
+          Serial.println(currentRequestId);
+          
+          deleteAllModels();
+        } else {
+          Serial.println("Missing requestId in inner data object");
+        }
+      } else {
+        Serial.println("Missing inner data object");
+      }
+    } else {
+      Serial.println("Missing outer data object");
+    }
+}
 
   if (strstr(topic, attendanceNotificationTopic.c_str()) != NULL) {
     // Parse JSON message
@@ -623,6 +664,8 @@ void reconnect() {
       mqtt_client.subscribe(importFingerTopic.c_str());
       mqtt_client.subscribe(addCardTopic.c_str());
       mqtt_client.subscribe(attendanceNotificationTopic.c_str());
+      String fingerprintResultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+      mqtt_client.subscribe(fingerprintResultTopic.c_str());
 
     } else {
       Serial.print("Failed to connect, state: ");
@@ -764,9 +807,32 @@ uint8_t enrollFingerprint() {
   if (getFingerprintEnroll(id)) {
     lastUsedId = id;
     return id;
+  } else {
+    Serial.println("DEBUG: Preparing to send failure MQTT message");
+    
+    // Gửi thông báo lỗi qua MQTT
+    StaticJsonDocument<256> doc;
+    doc["success"] = false;
+    doc["error"] = "Failed to enroll fingerprint";
+    doc["userId"] = currentUserId;
+    
+    String response;
+    serializeJson(doc, response);
+    
+    String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+    Serial.print("DEBUG: Sending to topic: ");
+    Serial.println(resultTopic);
+    Serial.print("DEBUG: Message content: ");
+    Serial.println(response);
+    
+    bool published = mqtt_client.publish(resultTopic.c_str(), response.c_str());
+    Serial.print("DEBUG: MQTT publish result: ");
+    Serial.println(published ? "Success" : "Failed");
+    
+    return 0;
   }
   
-  return 0;
+  
 }
 
 bool getFingerprintEnroll(uint8_t id) {
@@ -1030,7 +1096,7 @@ uint8_t uploadFingerprintTemplate(const char* hexData, uint16_t id) {
 }
 
 void sendFingerDataToServer(String userId, uint8_t fingerId) {
-  const char *server_url = "http://10.55.70.105:3000/users/add-fingerprint";
+  const char *server_url = "http://192.168.100.82:3000/users/add-fingerprint";
   HTTPClient http;
   
   http.begin(server_url);
@@ -1040,6 +1106,18 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
   
   if (fingerTemplate.length() == 0) {
     Serial.println("Failed to get fingerprint template, cannot send to server");
+    deleteFingerprint(fingerId);
+    StaticJsonDocument<256> doc;
+    doc["success"] = false;
+    doc["error"] = "Failed to get fingerprint template";
+    doc["userId"] = userId;
+    doc["fingerId"] = fingerId;
+    
+    String response;
+    serializeJson(doc, response);
+    
+    String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+    mqtt_client.publish(resultTopic.c_str(), response.c_str());
     delay(3000);
     return;
   }
@@ -1059,23 +1137,69 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
   
   int httpResponseCode = http.POST(requestBody);
   
-  if (httpResponseCode > 0) {
+   if (httpResponseCode > 0) {
     String response = http.getString();
-    Serial.println("HTTP Response code: " + String(httpResponseCode));
-    Serial.println("Response: " + response);
-    delay(3000);
+    Serial.println(response);
+    
+    // Parse response để kiểm tra kết quả từ server
+    StaticJsonDocument<512> responseDoc;
+    DeserializationError error = deserializeJson(responseDoc, response);
+    
+    if (error || !responseDoc["success"]) {
+      // Nếu server báo lỗi, xóa vân tay
+      deleteFingerprint(fingerId);
+      
+      // Gửi thông báo lỗi
+      StaticJsonDocument<256> errorDoc;
+      errorDoc["success"] = false;
+      errorDoc["error"] = "Server error: " + response;
+      errorDoc["userId"] = userId;
+      errorDoc["fingerId"] = fingerId;
+      String errorResponse;
+      serializeJson(errorDoc, errorResponse);
+      
+      String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+      mqtt_client.publish(resultTopic.c_str(), errorResponse.c_str());
+    } else {
+      // Thành công
+      StaticJsonDocument<256> successDoc;
+      successDoc["success"] = true;
+      successDoc["userId"] = userId;
+      successDoc["fingerId"] = fingerId;
+      
+      String successResponse;
+      serializeJson(successDoc, successResponse);
+      
+      String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+      mqtt_client.publish(resultTopic.c_str(), successResponse.c_str());
+    }
   } else {
-    Serial.println("HTTP Error: " + String(httpResponseCode));
-    delay(3000);
+    // Xóa vân tay nếu gửi HTTP thất bại
+    deleteFingerprint(fingerId);
+    
+    // Gửi thông báo lỗi
+    StaticJsonDocument<256> doc;
+    doc["success"] = false;
+    doc["error"] = "HTTP Error: " + String(httpResponseCode);
+    doc["userId"] = userId;
+    doc["fingerId"] = fingerId;
+    
+    String response;
+    serializeJson(doc, response);
+    
+    String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+    mqtt_client.publish(resultTopic.c_str(), response.c_str());
   }
   
   http.end();
+      
+ 
 }
 
 void getTemplateFromServerWithUserId(String userId, uint16_t fingerId) {
   HTTPClient http;
   
-  String url = "http://10.55.70.105:3000/users/" + userId + "/get-finger-data";
+  String url = "http://192.168.100.82:3000/users/" + userId + "/get-finger-data";
   
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
@@ -1127,13 +1251,51 @@ void getTemplateFromServerWithUserId(String userId, uint16_t fingerId) {
 }
 
 void deleteAllModels() {
-  finger.emptyDatabase();
-  Serial.println("Now database is empty :)");
+  Serial.println("Starting to empty database");
+  Serial.print("Using requestId: ");
+  Serial.println(currentRequestId);
+  
+  uint8_t result = finger.emptyDatabase();
+  
+  // Tạo response message
+  StaticJsonDocument<256> doc;
+  doc["deviceMac"] = macAddress;
+  doc["requestId"] = currentRequestId;  // Sử dụng currentRequestId đã lưu
+  doc["success"] = (result == FINGERPRINT_OK);
+  doc["message"] = (result == FINGERPRINT_OK) ? 
+    "Database emptied successfully" : "Failed to empty database";
+
+  String response;
+  serializeJson(doc, response);
+  
+  // Log response before sending
+  Serial.print("Sending response: ");
+  Serial.println(response);
+  
+  // Publish response
+  String responseTopic = "empty-database-response/" + macAddress;
+  bool published = mqtt_client.publish(responseTopic.c_str(), response.c_str());
+  
+  if (published) {
+    Serial.println("Response published successfully");
+  } else {
+    Serial.println("Failed to publish response, retrying...");
+    delay(100);
+    published = mqtt_client.publish(responseTopic.c_str(), response.c_str());
+    if (published) {
+      Serial.println("Response published successfully on retry");
+    } else {
+      Serial.println("Failed to publish response after retry");
+    }
+  }
+
+  // Reset requestId
+  currentRequestId = "";
 }
 
 void sendCardNumberToServer(String userId, String cardNumber) {
   HTTPClient http;
-  const char *server_url = "http://10.55.70.105:3000/users/add-cardNumber";
+  const char *server_url = "http://192.168.100.82:3000/users/add-cardNumber";
   http.begin(server_url);
   http.addHeader("Content-Type", "application/json");
   
