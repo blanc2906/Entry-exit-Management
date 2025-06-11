@@ -6,7 +6,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User, UserDocument } from 'src/schema/user.schema';
 import { DELETE_FINGERPRINT, IMPORT_FINGERPRINT } from 'src/shared/constants/mqtt.constant';
-import { ClientProxy } from '@nestjs/microservices';
+import { ClientProxy, MessagePattern } from '@nestjs/microservices';
 import { EventPattern } from '@nestjs/microservices';
 import { UserDevice, UserDeviceDocument } from 'src/schema/user-device.schema';
 import { UpdateDeviceDto } from './dto/update-device.dto';
@@ -142,7 +142,11 @@ export class DevicesService {
       throw new Error(`Failed to find devices: ${error.message}`);
     }
   }
-   async addUserToDevice(deviceId: string, userId: string) {
+
+  async getById (deviceId : string){
+    return this.deviceModel.findById(deviceId);
+  }
+  async addUserToDevice(deviceId: string, userId: string) {
     try {
       const [device, user] = await Promise.all([
         this.deviceModel.findById(deviceId),
@@ -193,7 +197,6 @@ export class DevicesService {
       throw error;
     }
   }
-
   async removeUserFromDevice(deviceId: string, userId: string) {
     try {
       const [device, user] = await Promise.all([
@@ -225,9 +228,17 @@ export class DevicesService {
       });
 
       if (userDevice) {
-        this.mqttClient.emit(`${DELETE_FINGERPRINT}/${device.deviceMac}`, JSON.stringify({
-          fingerId: userDevice.fingerId
-        }));
+        const response = await this.mqttService.deleteFingerprint(
+          device.deviceMac,
+          userDevice.fingerId,
+        );
+
+        if (!response.success) {
+          throw new HttpException(
+            'Device failed to delete fingerprint: ' + response.message,
+            HttpStatus.INTERNAL_SERVER_ERROR,
+          );
+        }
         
         await this.userDeviceModel.findByIdAndDelete(userDevice._id);
       }

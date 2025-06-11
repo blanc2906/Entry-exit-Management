@@ -9,7 +9,9 @@ import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
 import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
 import { Device, DeviceDocument } from "src/schema/device.schema";
 import { UserDevice, UserDeviceDocument } from "src/schema/user-device.schema";
-
+import { WorkSchedule } from "src/schema/workschedule.schema";
+import { WorkShift } from "src/schema/workshift.schema";
+import { UpdateWorkScheduleDto } from "./dto/update-workschedule.dto";
 
 @Injectable()
 export class UsersService {
@@ -23,6 +25,12 @@ export class UsersService {
     @InjectModel(UserDevice.name)
     private readonly userdeviceModel : Model<UserDeviceDocument>,
 
+    @InjectModel(WorkSchedule.name)
+    private readonly workScheduleModel: Model<WorkSchedule>,
+
+    @InjectModel(WorkShift.name)
+    private readonly workShiftModel: Model<WorkShift>,
+
     @Inject('MQTT_CLIENT')
     private readonly mqttClient: ClientMqtt
   ) {}
@@ -32,15 +40,28 @@ export class UsersService {
   }
   async createUser(createUserDto : CreateUserDto) : Promise<UserDocument> {
     try {
-
-      const existingUser = await this.userModel.findOne({ userId: createUserDto.userId });
-      if (existingUser) {
-        throw new Error('User with this userId already exists');
+      // Check for existing userId
+      const existingUserWithId = await this.userModel.findOne({ userId: createUserDto.userId });
+      if (existingUserWithId) {
+        throw new HttpException('User ID already exists', HttpStatus.BAD_REQUEST);
       }
-      const user = new this.userModel(createUserDto);
+
+      // Check for existing email
+      const existingUserWithEmail = await this.userModel.findOne({ email: createUserDto.email });
+      if (existingUserWithEmail) {
+        throw new HttpException('Email already exists', HttpStatus.BAD_REQUEST);
+      }
+
+      const user = new this.userModel({
+        ...createUserDto,
+        workSchedule: createUserDto.workSchedule ? new Types.ObjectId(createUserDto.workSchedule) : undefined
+      });
       return await user.save();
     } catch (error) {
-      throw new Error(`Failed to create user : ${error.message}`);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(`Failed to create user: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -277,5 +298,79 @@ export class UsersService {
       throw new Error('User not found');
     }
     return user;
+  }
+
+  async getUserWorkSchedule(userId: string) {
+    try {
+      const user = await this.userModel.findById(userId)
+        .populate({
+          path: 'workSchedule',
+          populate: {
+            path: 'shifts',
+            model: 'WorkShift'
+          }
+        });
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      return user.workSchedule;
+    } catch (error) {
+      throw new Error(`Failed to get user work schedule: ${error.message}`);
+    }
+  }
+
+  async updateUserWorkSchedule(userId: string, updateWorkScheduleDto: UpdateWorkScheduleDto) {
+    try {
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Kiểm tra workSchedule có tồn tại không
+      const workSchedule = await this.workScheduleModel.findById(updateWorkScheduleDto.workSchedule);
+      if (!workSchedule) {
+        throw new Error('Work schedule not found');
+      }
+
+      // Nếu có cập nhật shifts
+      if (updateWorkScheduleDto.shifts) {
+        // Kiểm tra tất cả các shift có tồn tại không
+        for (const shiftData of updateWorkScheduleDto.shifts) {
+          const shift = await this.workShiftModel.findById(shiftData.shift);
+          if (!shift) {
+            throw new Error(`Work shift not found: ${shiftData.shift}`);
+          }
+        }
+
+        // Cập nhật shifts trong workSchedule
+        workSchedule.shifts = new Map();
+        for (const shiftData of updateWorkScheduleDto.shifts) {
+          workSchedule.shifts.set(shiftData.day, new Types.ObjectId(shiftData.shift.toString()));
+        }
+        await workSchedule.save();
+      }
+
+      // Cập nhật workSchedule cho user
+      user.workSchedule = new Types.ObjectId(workSchedule._id.toString());
+      return await user.save();
+    } catch (error) {
+      throw new Error(`Failed to update user work schedule: ${error.message}`);
+    }
+  }
+
+  async removeUserWorkSchedule(userId: string) {
+    try {
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      user.workSchedule = null;
+      return await user.save();
+    } catch (error) {
+      throw new Error(`Failed to remove user work schedule: ${error.message}`);
+    }
   }
 }

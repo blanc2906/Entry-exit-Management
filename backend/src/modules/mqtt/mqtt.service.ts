@@ -39,7 +39,6 @@ export class MqttService {
     const subject = new Subject<any>();
     this.responseWaiters.set(requestId, subject);
 
-    // Wrap payload in data object as per NestJS MQTT format
     const messagePayload = {
       data: {
         ...payload,
@@ -47,7 +46,6 @@ export class MqttService {
       }
     };
 
-    // Send command
     await this.mqttClient.emit(`${command}/${deviceMac}`, messagePayload).toPromise();
 
     try {
@@ -65,7 +63,6 @@ export class MqttService {
   }
 
 
-  // Helper methods for common device commands
   async addFingerprint(deviceMac: string, userId: string, fingerId: number): Promise<any> {
     return this.sendCommandAndWaitResponse(deviceMac, 'add-fingerprint', {
       userId,

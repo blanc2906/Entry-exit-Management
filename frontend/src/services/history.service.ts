@@ -70,6 +70,18 @@ class HistoryService {
       };
     }
   }
+
+  async getRecentAttendance(limit: number = 5): Promise<History[]> {
+    try {
+      const response = await axios.get<History[]>(`${API_URL}/history/recent`, {
+        params: { limit }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching recent attendance:', error);
+      return [];
+    }
+  }
 }
 
 export const historyService = new HistoryService(); 

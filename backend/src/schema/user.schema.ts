@@ -39,6 +39,9 @@ export class User {
     @Prop({type : [{type : Types.ObjectId, ref : 'History'}]})
     history : Types.ObjectId[];
 
+    @Prop({ type: Types.ObjectId, ref: 'WorkSchedule' })
+    workSchedule?: Types.ObjectId;
+
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

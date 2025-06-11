@@ -77,21 +77,6 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
           </div>
         </div>
 
-        <div className="flex-1 max-w-xl mx-4 hidden sm:block">
-          <form onSubmit={handleSearchSubmit} className="relative">
-            <input
-              type="text"
-              placeholder="Search users, devices, or records..."
-              className="w-full py-2 pl-10 pr-4 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              value={searchQuery}
-              onChange={handleSearchChange}
-            />
-            <div className="absolute left-3 top-2.5 text-gray-400">
-              <Search size={18} />
-            </div>
-          </form>
-        </div>
-
         <div className="flex items-center space-x-4">
           <div className="relative">
             <button

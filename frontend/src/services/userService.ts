@@ -21,7 +21,7 @@ export const userService = {
     };
   },
 
-  async createUser(userData: { userId: string; name: string }) {
+  async createUser(userData: { userId: string; name: string; email: string; workSchedule?: string }) {
     const response = await axios.post(`${API_URL}/users/create-user`, {
       ...userData,
       createdAt: new Date(),

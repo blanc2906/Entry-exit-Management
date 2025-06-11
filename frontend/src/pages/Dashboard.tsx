@@ -1,10 +1,24 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Overview from '../components/dashboard/Overview';
 import AttendanceChart from '../components/dashboard/AttendanceChart';
 import RecentAttendance from '../components/dashboard/RecentAttendance';
-import { dashboardMetrics, attendanceChartData, recentAttendance } from '../data/mockData';
+import { dashboardMetrics, attendanceChartData, recentAttendance as mockRecentAttendance, users, devices } from '../data/mockData';
+import { useRecentActivity } from '../hooks/useRecentActivity';
+import { AttendanceRecord } from '../types';
+import { useRecentAttendanceStore } from '../store/recentAttendanceStore';
+import { initActivitySocket, subscribeActivity, RecentActivity } from '../utils/activitySocket';
 
 const Dashboard: React.FC = () => {
+  const { records, setRecords } = useRecentAttendanceStore();
+
+  useEffect(() => {
+    initActivitySocket();
+    const unsubscribe = subscribeActivity((activities: any[]) => {
+      setRecords(activities);
+    });
+    return unsubscribe;
+  }, [setRecords]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -29,7 +43,7 @@ const Dashboard: React.FC = () => {
         <div className="px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-semibold text-gray-800">Recent Attendance</h2>
         </div>
-        <RecentAttendance records={recentAttendance} />
+        <RecentAttendance records={records} />
       </div>
     </div>
   );

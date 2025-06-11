@@ -133,29 +133,10 @@ const DevicesPage: React.FC = () => {
       ),
     },
     {
-      key: 'lastSeen' as keyof Device,
-      header: 'Last Seen',
-      render: (value: Date | undefined) => value ? new Date(value).toLocaleString() : '-',
-    },
-    {
-      key: 'createdAt' as keyof Device,
-      header: 'Created',
-      render: (value: Date | undefined) => value ? new Date(value).toLocaleDateString() : '',
-    },
-    {
       key: '_id' as keyof Device,
       header: 'Actions',
       render: (_: string | undefined, device: Device) => (
         <div className="flex items-center space-x-3">
-          <button 
-            className="text-gray-400 hover:text-primary-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              console.log('Settings for device:', device._id);
-            }}
-          >
-            <Settings size={18} />
-          </button>
           <button 
             className="text-gray-400 hover:text-primary-600"
             onClick={(e) => {

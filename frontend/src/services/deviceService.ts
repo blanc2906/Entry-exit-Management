@@ -28,13 +28,17 @@ export const deviceService = {
     const response = await deviceApi.get('/findAll', {
       params: { page, limit, search, status },
     });
+    const items = (response.data.devices || []).map((device: any) => ({
+      ...device,
+      isOnline: device.status === 'online',
+    }));
     return {
-      items: response.data.devices || [],
+      items,
       meta: {
         currentPage: response.data.page || 1,
         totalPages: response.data.totalPages || 1,
         totalItems: response.data.total || 0,
-        itemCount: response.data.devices?.length || 0,
+        itemCount: items.length,
         itemsPerPage: limit,
       },
     };
@@ -98,9 +102,5 @@ export const deviceService = {
 
   deleteAllUsers: async (deviceId: string): Promise<DeviceResponse> => {
     return deviceApi.post(`/${deviceId}/delete-all-users`);
-  },
-
-  updateDevice: async (deviceId: string, data: any): Promise<DeviceResponse> => {
-    return deviceApi.patch(`/${deviceId}`, data);
   },
 }; 

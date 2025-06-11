@@ -9,6 +9,8 @@ import { useUsers } from '../hooks/useUsers';
 import { User, UserFilters as UserFiltersType } from '../types/user';
 import { userService } from '../services/userService';
 import ConfirmDialog from '../components/common/ConfirmDialog';
+import { workScheduleService } from '../services/workScheduleService';
+import { WorkSchedule } from '../types/userWorkSchedule';
 
 const UsersPage: React.FC = () => {
   const {
@@ -44,21 +46,43 @@ const UsersPage: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
+
   useEffect(() => {
     fetchUsers(filters);
   }, [fetchUsers, filters]);
+
+  useEffect(() => {
+    // Lấy danh sách work schedules để map id sang tên
+    const fetchSchedules = async () => {
+      try {
+        const data = await workScheduleService.getAllSchedules();
+        setWorkSchedules(data);
+      } catch {
+        setWorkSchedules([]);
+      }
+    };
+    fetchSchedules();
+  }, []);
+
+  const getScheduleName = (id?: string) => {
+    if (!id) return '';
+    const found = workSchedules.find(ws => ws._id === id || ws._id?.toString() === id);
+    return found ? found.scheduleName : id;
+  };
 
   const handleAddUser = () => {
     setIsAddUserModalOpen(true);
   };
 
-  const handleCreateUser = async (userData: { userId: string; name: string }) => {
+  const handleCreateUser = async (userData: { userId: string; name: string; email: string; workSchedule?: string }) => {
     try {
       await userService.createUser(userData);
       setIsAddUserModalOpen(false);
       fetchUsers(filters);
     } catch (error) {
       console.error('Error creating user:', error);
+      throw error; // Re-throw the error to be handled by the form
     }
   };
 
@@ -158,6 +182,11 @@ const UsersPage: React.FC = () => {
       render: (value: string | undefined) => value || '',
     },
     {
+      key: 'workSchedule' as keyof User,
+      header: 'Work Schedule',
+      render: (value: string | undefined) => getScheduleName(value),
+    },
+    {
       key: 'fingerTemplate' as keyof User,
       header: 'Fingerprint',
       render: (value: string | undefined, user: User) => (
@@ -199,15 +228,6 @@ const UsersPage: React.FC = () => {
       header: 'Actions',
       render: (_: string | undefined, user: User) => (
         <div className="flex items-center space-x-3">
-          <button 
-            className="text-gray-400 hover:text-primary-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              console.log('Settings for user:', user._id);
-            }}
-          >
-            <Settings size={18} />
-          </button>
           <button 
             className="text-gray-400 hover:text-primary-600"
             onClick={(e) => {

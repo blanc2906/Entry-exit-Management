@@ -1,12 +1,11 @@
-import { Body, Controller, Logger, Post, Param, Get, Query, Delete, HttpCode, HttpStatus } from "@nestjs/common";
+import { Body, Controller, Logger, Post, Param, Get, Query, Delete, HttpCode, HttpStatus, Put } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
 import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
 import { FindAllUsersDto } from "./dto/find-all-user.dto";
 import { MessagePattern, Payload } from "@nestjs/microservices";
-
-
+import { UpdateWorkScheduleDto } from "./dto/update-workschedule.dto";
 
 @Controller('users')
 export class UsersController {
@@ -82,4 +81,21 @@ export class UsersController {
   }
 }
 
+  @Get(':userId/work-schedule')
+  async getUserWorkSchedule(@Param('userId') userId: string) {
+    return await this.usersService.getUserWorkSchedule(userId);
+  }
+
+  @Put(':userId/work-schedule')
+  async updateUserWorkSchedule(
+    @Param('userId') userId: string,
+    @Body() updateWorkScheduleDto: UpdateWorkScheduleDto
+  ) {
+    return await this.usersService.updateUserWorkSchedule(userId, updateWorkScheduleDto);
+  }
+
+  @Delete(':userId/work-schedule')
+  async removeUserWorkSchedule(@Param('userId') userId: string) {
+    return await this.usersService.removeUserWorkSchedule(userId);
+  }
 }

@@ -22,6 +22,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     { name: 'Users', icon: <Users size={20} />, path: '/users' },
     { name: 'Devices', icon: <Cpu size={20} />, path: '/devices' },
     { name: 'Attendance', icon: <Calendar size={20} />, path: '/attendance' },
+    { name: 'Workshift', icon: <Calendar size={20} />, path: '/workshifts' },
+    { name: 'WorkSchedule', icon: <Calendar size={20} />, path: '/workschedules' },
     { name: 'Settings', icon: <Settings size={20} />, path: '/settings' },
   ];
 

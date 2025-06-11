@@ -22,6 +22,8 @@ export interface AttendanceRecord {
   device: Device;
   timestamp: string;
   status: 'check-in' | 'check-out';
+  check_in_auth_method?: string;
+  check_out_auth_method?: string;
 }
 
 export interface DashboardMetric {
@@ -42,4 +44,16 @@ export interface ChartData {
     borderColor: string;
     backgroundColor: string;
   }[];
+}
+
+export interface RecentAttendanceRecord {
+  user: {
+    name: string;
+    avatar?: string;
+  };
+  time: string;
+  device: string;
+  status: string;
+  timestamp: string;
+  type: 'check-in' | 'check-out';
 }

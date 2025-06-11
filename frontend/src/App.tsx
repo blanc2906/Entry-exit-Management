@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import AttendancePage from './pages/AttendancePage';
 import UsersPage from './pages/UsersPage';
 import DevicesPage from './pages/DevicesPage';
+import { WorkShiftPage } from './pages/workshift/WorkShiftPage';
+import { WorkSchedulePage } from './pages/workschedule/WorkSchedulePage';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 1024);
@@ -36,6 +38,8 @@ function App() {
               <Route path="/attendance" element={<AttendancePage />} />
               <Route path="/users" element={<UsersPage />} />
               <Route path="/devices" element={<DevicesPage />} />
+              <Route path="/workshifts" element={<WorkShiftPage />} />
+              <Route path="/workschedules" element={<WorkSchedulePage />} />
             </Routes>
           </div>
         </main>

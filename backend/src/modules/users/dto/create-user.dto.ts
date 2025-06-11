@@ -1,4 +1,5 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+// import { Types } from 'mongoose';
 
 export class CreateUserDto {
     @IsString()
@@ -9,8 +10,12 @@ export class CreateUserDto {
     @IsNotEmpty()
     name: string;
 
-    // @IsString()
-    // email: string;
+    @IsString()
+    email: string;
+
+    @IsOptional()
+    @IsString()
+    workSchedule?: string;
 
     // @IsString()
     // fingerPrint: number;

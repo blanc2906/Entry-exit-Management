@@ -5,6 +5,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { UsersModule } from './modules/users/users.module';
 import { HistoryModule } from './modules/history/history.module';
 import { MqttModule } from './modules/mqtt/mqtt.module';
+import { WorkShiftModule } from './modules/workshift/workshift.module';
+import { WorkScheduleModule } from './modules/workschedule/workschedule.module'; 
 
 @Module({
   imports: [  
@@ -16,7 +18,9 @@ import { MqttModule } from './modules/mqtt/mqtt.module';
     MqttModule,
     DevicesModule,
     UsersModule,
-    HistoryModule
+    HistoryModule,
+    WorkShiftModule,
+    WorkScheduleModule
   ], 
   controllers: [],
   providers: [],

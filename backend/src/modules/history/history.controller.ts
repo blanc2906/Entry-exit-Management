@@ -1,5 +1,5 @@
 // src/modules/history/history.controller.ts
-import { Controller, Get, Inject, Logger, Query } from "@nestjs/common";
+import { Controller, Get, Inject, Logger, Query, Post, Param } from "@nestjs/common";
 import { ClientMqtt, Ctx, MessagePattern, MqttContext, Payload } from "@nestjs/microservices";
 import { UsersService } from "../users/users.service";
 import { UserDocument } from "src/schema/user.schema";
@@ -8,6 +8,7 @@ import { HistoryService } from "./history.service";
 import { ATTENDANCE_NOTIFICATION } from "src/shared/constants/mqtt.constant";
 import { DevicesService } from "../devices/devices.service";
 import { FindAllHistoryDto } from "./dto/find-all-history.dto";
+import { CreateUserLogDto, UpdateUserLogDto } from './dto/history.dto';
 
 @Controller('history')
 export class HistoryController {
@@ -126,4 +127,23 @@ export class HistoryController {
             authMethod as 'fingerprint' | 'card'
         );
     }
+
+    @Get('employee/:userId/shifts')
+    async getEmployeeShifts(
+        @Param('userId') userId: string,
+        @Query('startDate') startDate: Date,
+        @Query('endDate') endDate: Date
+    ) {
+        return this.historyService.getEmployeeShifts(userId, startDate, endDate);
+    }
+
+    @Get('employee/:userId/summary')
+    async getEmployeeAttendanceSummary(
+        @Param('userId') userId: string,
+        @Query('startDate') startDate: Date,
+        @Query('endDate') endDate: Date
+    ) {
+        return this.historyService.getEmployeeAttendanceSummary(userId, startDate, endDate);
+    }
+
 }

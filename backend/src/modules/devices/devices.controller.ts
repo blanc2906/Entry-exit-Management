@@ -38,6 +38,12 @@ export class DevicesController implements OnModuleInit {
     const { page, limit, search } = findAllDeviceDto;
     return await this.devicesService.findAllDevices(page, limit, search);
   }
+  @Get(":deviceId")
+  async findOne(
+    @Param('deviceId') deviceId: string
+  ){
+    return this.devicesService.getById(deviceId);
+  }
 
   @Post(':deviceId/users/:userId')
   addUserToDevice(
