@@ -41,7 +41,9 @@ const SelectDeviceModal: React.FC<SelectDeviceModalProps> = ({
   }, []);
 
   const getTitle = () => {
-    return `Select Device for ${registrationType === 'fingerprint' ? 'Fingerprint' : 'Card'} Registration`;
+    return registrationType === 'fingerprint'
+      ? 'Chọn thiết bị để đăng ký vân tay'
+      : 'Chọn thiết bị để đăng ký thẻ';
   };
 
   const getIcon = () => {
@@ -97,14 +99,10 @@ const SelectDeviceModal: React.FC<SelectDeviceModalProps> = ({
                 disabled={requestStatus.loading}
                 className="w-full p-4 text-left border rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <div className="font-medium text-gray-900">{device.description}</div>
-                <div className="text-sm text-gray-500">{device.deviceMac}</div>
-                <div className="text-xs text-gray-400 mt-1">
-                  {device.isOnline ? (
-                    <span className="text-green-500">Online</span>
-                  ) : (
-                    <span className="text-gray-500">Offline</span>
-                  )}
+                <div className="text-sm text-gray-700 space-y-1">
+                  <div><span className="font-medium">Tên thiết bị:</span> <span className="font-normal">{device.description}</span></div>
+                  <div><span className="font-medium">Địa chỉ MAC:</span> <span className="font-normal">{device.deviceMac}</span></div>
+                  <div><span className="font-medium">Trạng thái:</span> <span className="font-normal">{device.isOnline ? 'Đang hoạt động' : 'Ngoại tuyến'}</span></div>
                 </div>
               </button>
             ))}

@@ -1,5 +1,5 @@
 // src/modules/history/history.controller.ts
-import { Controller, Get, Inject, Logger, Query, Post, Param } from "@nestjs/common";
+import { Controller, Get, Inject, Logger, Query, Post, Param, Res } from "@nestjs/common";
 import { ClientMqtt, Ctx, MessagePattern, MqttContext, Payload } from "@nestjs/microservices";
 import { UsersService } from "../users/users.service";
 import { UserDocument } from "src/schema/user.schema";
@@ -9,6 +9,8 @@ import { ATTENDANCE_NOTIFICATION } from "src/shared/constants/mqtt.constant";
 import { DevicesService } from "../devices/devices.service";
 import { FindAllHistoryDto } from "./dto/find-all-history.dto";
 import { CreateUserLogDto, UpdateUserLogDto } from './dto/history.dto';
+import { ExportHistoryDto } from './dto/export-history.dto';
+import { Response } from 'express';
 
 @Controller('history')
 export class HistoryController {
@@ -144,6 +146,22 @@ export class HistoryController {
         @Query('endDate') endDate: Date
     ) {
         return this.historyService.getEmployeeAttendanceSummary(userId, startDate, endDate);
+    }
+
+    @Get('export')
+    async exportToExcel(
+        @Query() exportHistoryDto: ExportHistoryDto,
+        @Res() res: Response
+    ) {
+        const buffer = await this.historyService.exportToExcel(exportHistoryDto);
+        
+        res.set({
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition': 'attachment; filename=attendance-report.xlsx',
+            'Content-Length': buffer.length,
+        });
+        
+        res.send(buffer);
     }
 
 }

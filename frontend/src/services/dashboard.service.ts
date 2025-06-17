@@ -10,6 +10,20 @@ interface DashboardStats {
   attendanceGrowthRate: number;
 }
 
+interface AttendanceChartData {
+  date: string;
+  count: number;
+}
+
+interface RecentAttendance {
+  id: string;
+  userId: string;
+  userName: string;
+  deviceName: string;
+  timestamp: string;
+  type: 'check-in' | 'check-out';
+}
+
 class DashboardService {
   async getStats(): Promise<DashboardStats> {
     try {
@@ -25,6 +39,26 @@ class DashboardService {
         deviceGrowthRate: 0,
         attendanceGrowthRate: 0
       };
+    }
+  }
+
+  async getAttendanceChartData(days: number = 7): Promise<AttendanceChartData[]> {
+    try {
+      const response = await axios.get<AttendanceChartData[]>(`${API_URL}/dashboard/attendance-chart?days=${days}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching attendance chart data:', error);
+      return [];
+    }
+  }
+
+  async getRecentAttendance(limit: number = 10): Promise<RecentAttendance[]> {
+    try {
+      const response = await axios.get<RecentAttendance[]>(`${API_URL}/dashboard/recent-attendance?limit=${limit}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching recent attendance:', error);
+      return [];
     }
   }
 }

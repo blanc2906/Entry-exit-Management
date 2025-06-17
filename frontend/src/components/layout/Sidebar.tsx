@@ -18,13 +18,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
   const { isActive } = useActiveRoute();
 
   const navItems: NavItem[] = [
-    { name: 'Dashboard', icon: <Home size={20} />, path: '/' },
-    { name: 'Users', icon: <Users size={20} />, path: '/users' },
-    { name: 'Devices', icon: <Cpu size={20} />, path: '/devices' },
-    { name: 'Attendance', icon: <Calendar size={20} />, path: '/attendance' },
-    { name: 'Workshift', icon: <Calendar size={20} />, path: '/workshifts' },
-    { name: 'WorkSchedule', icon: <Calendar size={20} />, path: '/workschedules' },
-    { name: 'Settings', icon: <Settings size={20} />, path: '/settings' },
+    { name: 'Trang chủ', icon: <Home size={20} />, path: '/' },
+    { name: 'Nhân viên', icon: <Users size={20} />, path: '/users' },
+    { name: 'Thiết bị', icon: <Cpu size={20} />, path: '/devices' },
+    { name: 'Chấm công', icon: <Calendar size={20} />, path: '/attendance' },
+    { name: 'Ca làm', icon: <Calendar size={20} />, path: '/workshifts' },
+    { name: 'Lịch làm việc', icon: <Calendar size={20} />, path: '/workschedules' },
+    { name: 'Cài đặt', icon: <Settings size={20} />, path: '/settings' },
   ];
 
   return (

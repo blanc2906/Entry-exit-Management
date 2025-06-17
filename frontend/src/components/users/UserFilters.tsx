@@ -31,7 +31,7 @@ export const UserFilters: React.FC<UserFiltersProps> = ({
       <div className="flex-1 relative">
         <input
           type="text"
-          placeholder="Search users..."
+          placeholder="Tìm kiếm nhân viên..."
           value={filters.search || ''}
           onChange={handleSearchChange}
           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"

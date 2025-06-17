@@ -26,10 +26,12 @@ LiquidCrystal_I2C lcd(LCD_ADDR, 16, 2);
 #define EEPROM_SIZE 96
 #define SSID_ADDR 0
 #define PASS_ADDR 32
+#define SERVER_IP_ADDR 64  // Địa chỉ bắt đầu lưu IP server trong EEPROM
 
 // Wifi configs
 const char *ssid = NULL; 
 const char *password = NULL;
+String serverIP = "192.168.100.82"; // IP mặc định
 
 // MQTT configs
 const char *mqtt_broker = MQTT_BROKER_URL;
@@ -64,11 +66,8 @@ String importFingerTopic;
 String addCardTopic;
 String fingerAttendanceTopic;
 String cardAttendanceTopic;
-String cardRegistrationResultTopic;
-String fingerprintDeletionResultTopic;
 String attendanceNotificationTopic;
 String currentRequestId = "";  
-String fingerImportResult = "fingerprint_import_result";
 // Add new variables for attendance response tracking
 bool waitingForAttendanceResponse = false;
 unsigned long lastAttendanceTime = 0;
@@ -118,24 +117,87 @@ void loadCredentials(String &ssid, String &password) {
 }
 
 void clearCredentials() {
-  for (int i = 0; i < 64; i++) EEPROM.write(i, 0);
+  for (int i = 0; i < 96; i++) EEPROM.write(i, 0); // Xóa cả phần lưu IP server
   EEPROM.commit();
+}
+
+void saveServerIP(const String& ip) {
+  for (int i = 0; i < ip.length(); i++) {
+    EEPROM.write(SERVER_IP_ADDR + i, ip[i]);
+  }
+  EEPROM.write(SERVER_IP_ADDR + ip.length(), 0); // Null terminator
+  EEPROM.commit();
+}
+
+void loadServerIP() {
+  char ipBuf[16];
+  int i = 0;
+  char c;
+  while ((c = EEPROM.read(SERVER_IP_ADDR + i)) != 0 && i < 15) {
+    ipBuf[i] = c;
+    i++;
+  }
+  ipBuf[i] = '\0';
+  
+  if (i > 0) {
+    String newIP = String(ipBuf);
+    if (isValidIP(newIP)) {
+      serverIP = newIP;
+      Serial.print("Loaded server IP from EEPROM: ");
+      Serial.println(serverIP);
+    } else {
+      Serial.println("Invalid IP in EEPROM, using default IP");
+    }
+  } else {
+    Serial.println("No IP in EEPROM, using default IP");
+  }
+}
+
+bool isValidIP(const String& ip) {
+  // Kiểm tra cơ bản định dạng IP
+  int dots = 0;
+  for (int i = 0; i < ip.length(); i++) {
+    if (ip[i] == '.') dots++;
+  }
+  return dots == 3;
 }
 
 void handleRoot() {
   String html = "<h1>Configure WiFi</h1><form method='POST' action='/setup'>";
   html += "SSID: <input name='ssid' type='text'><br>";
   html += "Password: <input name='password' type='password'><br>";
+  html += "Server IP: <input name='server_ip' type='text' value='" + serverIP + "'><br>";
   html += "<input type='submit'></form>";
   server.send(200, "text/html", html);
+}
+void startAPMode() {
+  WiFi.softAP("Chamcong-Config", "12345678");
+  Serial.println("Started Access Point: ESP32_Config");
+  Serial.println("IP Address: " + WiFi.softAPIP().toString());
+
+  server.on("/", handleRoot);
+  server.on("/setup", HTTP_POST, handleSetup);
+  server.begin();
+  
+  isAPMode = true;
 }
 
 void handleSetup() {
   String ssid = server.arg("ssid");
   String password = server.arg("password");
+  String newServerIP = server.arg("server_ip");
 
   if (ssid.length() > 0 && password.length() > 0) {
     saveCredentials(ssid, password);
+    
+    // Lưu IP server nếu được cung cấp và hợp lệ
+    if (newServerIP.length() > 0 && isValidIP(newServerIP)) {
+      saveServerIP(newServerIP);
+      serverIP = newServerIP;
+      Serial.print("Saved new server IP: ");
+      Serial.println(serverIP);
+    }
+    
     server.send(200, "text/html", "<h1>Saved! Rebooting...</h1>");
     delay(2000);
     ESP.restart();
@@ -159,7 +221,6 @@ void startAPMode() {
 bool connectToWiFi() {
   String savedSSID, savedPassword;
   loadCredentials(savedSSID, savedPassword);
-
   if (savedSSID.length() > 0 && savedPassword.length() > 0) {
     WiFi.begin(savedSSID.c_str(), savedPassword.c_str());
     Serial.print("Connecting to WiFi");
@@ -169,7 +230,6 @@ bool connectToWiFi() {
       Serial.print(".");
       delay(500);
     }
-
     if (WiFi.status() == WL_CONNECTED) {
       Serial.println("\nConnected to WiFi!");
       Serial.println("IP Address: " + WiFi.localIP().toString());
@@ -180,7 +240,6 @@ bool connectToWiFi() {
   } else {
     Serial.println("No saved credentials.");
   }
-
   startAPMode();
   return false;
 }
@@ -190,6 +249,11 @@ void setup(){
   EEPROM.begin(EEPROM_SIZE);
   delay(500);
 
+  // Load saved server IP
+  loadServerIP();
+  Serial.print("Using server IP: ");
+  Serial.println(serverIP);
+  
   Wire.begin(LCD_SDA, LCD_SCL);
   lcd.init();
   lcd.backlight();
@@ -214,8 +278,7 @@ void setup(){
 
     fingerAttendanceTopic = "finger_attendance/" + macAddress;
     cardAttendanceTopic = "card_attendance/" + macAddress;
-    cardRegistrationResultTopic = "card_registration_result/" + macAddress;
-    fingerprintDeletionResultTopic = "fingerprint_deletion_result/" + macAddress;
+
     // Initialize MQTT only if WiFi is connected
       String fingerprintResultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
   mqtt_client.subscribe(fingerprintResultTopic.c_str());
@@ -254,7 +317,7 @@ void setup(){
     mqtt_client.subscribe(importFingerTopic.c_str());
     mqtt_client.subscribe(addCardTopic.c_str());
     mqtt_client.subscribe(attendanceNotificationTopic.c_str());
-    mqtt_client.subscribe(fingerImportResult.c_str());
+
     // Initialize fingerprint sensor
     while (!Serial); 
     delay(100);
@@ -651,7 +714,6 @@ void reconnect() {
       mqtt_client.subscribe(attendanceNotificationTopic.c_str());
       String fingerprintResultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
       mqtt_client.subscribe(fingerprintResultTopic.c_str());
-      mqtt_client.subscribe(fingerImportResult.c_str());
 
     } else {
       Serial.print("Failed to connect, state: ");
@@ -821,124 +883,6 @@ uint8_t enrollFingerprint() {
   
 }
 
-// bool getFingerprintEnroll(uint8_t id) {
-//   int p = -1;
-//   Serial.println("Waiting for valid finger to enroll");
-//   lcd.clear();
-//   lcd.setCursor(0, 0);
-//   lcd.print("Place finger");
-//   lcd.setCursor(0, 1);
-//   lcd.print("to enroll #");
-//   lcd.print(id);
-  
-//   while (p != FINGERPRINT_OK) {
-//     p = finger.getImage();
-//     switch (p) {
-//     case FINGERPRINT_OK:
-//       break;
-//     case FINGERPRINT_NOFINGER:
-//       Serial.print(".");
-//       break;
-//     case FINGERPRINT_PACKETRECIEVEERR:
-//       Serial.println("Communication error");
-//       break;
-//     case FINGERPRINT_IMAGEFAIL:
-//       Serial.println("Imaging error");
-//       break;
-//     default:
-//       Serial.println("Unknown error");
-//       break;
-//     }
-//     delay(100);
-//   }
-
-//   p = finger.image2Tz(1);
-//   if (p != FINGERPRINT_OK) {
-//     Serial.println("Image conversion failed");
-//     return false;
-//   }
-
-//   p = finger.fingerFastSearch();
-//   if (p == FINGERPRINT_OK) {
-//     Serial.print("This fingerprint already exists with ID #");
-//     Serial.println(finger.fingerID);
-//     delay(5000);
-//     return false;
-//   } else if (p == FINGERPRINT_NOTFOUND) {
-//     Serial.println("No duplicate found, proceeding with enrollment");
-//   } else {
-//     Serial.println("Error during duplicate check");
-//     return false;
-//   }
-
-//   Serial.println("Remove finger");
-//   lcd.clear();
-//   lcd.setCursor(0, 0);
-//   lcd.print("Remove Finger");
-//   delay(2000);
-//   p = 0;
-//   while (p != FINGERPRINT_NOFINGER) {
-//     p = finger.getImage();
-//     delay(100);
-//   }
-
-//   Serial.println("Place same finger again");
-//   lcd.clear();
-//   lcd.setCursor(0, 0);
-//   lcd.print("Place Same");
-//   lcd.setCursor(0, 1);
-//   lcd.print("Finger Again");
-//   p = -1;
-//   while (p != FINGERPRINT_OK) {
-//     p = finger.getImage();
-//     switch (p) {
-//     case FINGERPRINT_OK:
-//       Serial.println("Image taken");
-//       break;
-//     case FINGERPRINT_NOFINGER:
-//       Serial.print(".");
-//       break;
-//     case FINGERPRINT_PACKETRECIEVEERR:
-//       Serial.println("Communication error");
-//       break;
-//     case FINGERPRINT_IMAGEFAIL:
-//       Serial.println("Imaging error");
-//       break;
-//     default:
-//       Serial.println("Unknown error");
-//       break;
-//     }
-//     delay(100);
-//   }
-
-//   p = finger.image2Tz(2);
-//   if (p != FINGERPRINT_OK) {
-//     Serial.println("Image conversion failed");
-//     return false;
-//   }
-
-//   p = finger.createModel();
-//   if (p != FINGERPRINT_OK) {
-//     Serial.println("Failed to create model");
-//     return false;
-//   }
-
-//   p = finger.storeModel(id);
-//   if (p != FINGERPRINT_OK) {
-//     Serial.println("Failed to store model");
-//     return false;
-//   }
-//   delay(5000);
-//   Serial.println("Fingerprint enrolled successfully!");
-//   lcd.clear();
-//   lcd.setCursor(0, 0);
-//   lcd.print("Enrollment OK!");
-//   lcd.setCursor(0, 1);
-//   lcd.print("ID #");
-//   lcd.print(id);
-//   delay(2000);
-//   return true;
-// }
 bool getFingerprintEnroll(uint8_t id) {
   int p = -1;
   Serial.println("Waiting for valid finger to enroll");
@@ -1234,9 +1178,11 @@ uint8_t uploadFingerprintTemplate(const char* hexData, uint16_t id) {
 }
 
 void sendFingerDataToServer(String userId, uint8_t fingerId) {
-  const char *server_url = "http://192.168.100.82:3000/users/add-fingerprint";
-  HTTPClient http;
+  String server_url = "http://" + serverIP + ":3000/users/add-fingerprint";
+  Serial.print("Sending request to: ");
+  Serial.println(server_url);
   
+  HTTPClient http;
   http.begin(server_url);
   http.addHeader("Content-Type", "application/json");
   
@@ -1335,10 +1281,11 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
 }
 
 void getTemplateFromServerWithUserId(String userId, uint16_t fingerId) {
+  String url = "http://" + serverIP + ":3000/users/" + userId + "/get-finger-data";
+  Serial.print("Sending request to: ");
+  Serial.println(url);
+  
   HTTPClient http;
-  
-  String url = "http://192.168.100.82:3000/users/" + userId + "/get-finger-data";
-  
   http.begin(url);
   http.addHeader("Content-Type", "application/json");
   
@@ -1420,8 +1367,11 @@ void deleteAllModels() {
 }
 
 void sendCardNumberToServer(String userId, String cardNumber) {
+  String server_url = "http://" + serverIP + ":3000/users/add-cardNumber";
+  Serial.print("Sending request to: ");
+  Serial.println(server_url);
+  
   HTTPClient http;
-  const char *server_url = "http://192.168.100.82:3000/users/add-cardNumber";
   http.begin(server_url);
   http.addHeader("Content-Type", "application/json");
   

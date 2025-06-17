@@ -12,13 +12,13 @@ interface UserWorkScheduleProps {
 }
 
 const DAYS_OF_WEEK = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday'
+  'Thứ 2',
+  'Thứ 3',
+  'Thứ 4',
+  'Thứ 5',
+  'Thứ 6',
+  'Thứ 7',
+  'Chủ nhật'
 ];
 
 export const UserWorkSchedule: React.FC<UserWorkScheduleProps> = ({
@@ -87,13 +87,13 @@ export const UserWorkSchedule: React.FC<UserWorkScheduleProps> = ({
 
   const columns = [
     {
-      title: 'Day',
+      title: 'Thứ',
       dataIndex: 'day',
       key: 'day',
       width: 120
     },
     {
-      title: 'Shift',
+      title: 'Ca',
       dataIndex: 'shift',
       key: 'shift',
       render: (_: any, record: any, index: number) => (
@@ -102,7 +102,7 @@ export const UserWorkSchedule: React.FC<UserWorkScheduleProps> = ({
           noStyle
         >
           <Select
-            placeholder="Select shift"
+            placeholder="Chọn ca"
             allowClear
             style={{ width: '100%' }}
           >
@@ -119,7 +119,7 @@ export const UserWorkSchedule: React.FC<UserWorkScheduleProps> = ({
 
   return (
     <Card
-      title="Work Schedule"
+      title="Lịch làm việc"
       extra={
         <Space>
           <Button
@@ -128,7 +128,7 @@ export const UserWorkSchedule: React.FC<UserWorkScheduleProps> = ({
             onClick={form.submit}
             loading={loading}
           >
-            Save
+            Lưu
           </Button>
           {workSchedule && (
             <Button
@@ -137,7 +137,7 @@ export const UserWorkSchedule: React.FC<UserWorkScheduleProps> = ({
               onClick={handleRemove}
               loading={loading}
             >
-              Remove
+              Xóa
             </Button>
           )}
         </Space>
@@ -153,10 +153,10 @@ export const UserWorkSchedule: React.FC<UserWorkScheduleProps> = ({
       >
         <Form.Item
           name="workSchedule"
-          label="Work Schedule"
-          rules={[{ required: true, message: 'Please select a work schedule' }]}
+          label="Lịch làm việc"
+          rules={[{ required: true, message: 'Vui lòng chọn lịch làm việc' }]}
         >
-          <Select placeholder="Select work schedule">
+          <Select placeholder="Chọn lịch làm việc">
             {availableSchedules.map(schedule => (
               <Select.Option key={schedule._id.toString()} value={schedule._id}>
                 {schedule.name}

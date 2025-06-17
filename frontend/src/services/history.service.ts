@@ -5,6 +5,9 @@ export interface HistoryFilter {
   page?: number;
   startDate?: string;
   endDate?: string;
+  userId?: string;
+  deviceId?: string;
+  status?: string;
 }
 
 export interface History {
@@ -30,6 +33,18 @@ export interface History {
   };
   check_in_auth_method: 'fingerprint' | 'card';
   check_out_auth_method?: 'fingerprint' | 'card';
+  expectedShift?: {
+    _id: string;
+    name: string;
+    startTime: string;
+    endTime: string;
+  };
+  expectedStartTime?: string;
+  expectedEndTime?: string;
+  status: 'on-time' | 'late' | 'early' | 'absent' | 'overtime';
+  workHours: number;
+  overtime: number;
+  note?: string;
 }
 
 interface HistoryResponse {
@@ -80,6 +95,27 @@ class HistoryService {
     } catch (error) {
       console.error('Error fetching recent attendance:', error);
       return [];
+    }
+  }
+
+  async exportExcel(filter: HistoryFilter = {}) {
+    try {
+      const response = await axios.get(`${API_URL}/history/export`, {
+        params: filter,
+        responseType: 'blob',
+      });
+      // Tạo link download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'attendance-report.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting excel:', error);
+      alert('Xuất báo cáo thất bại!');
     }
   }
 }

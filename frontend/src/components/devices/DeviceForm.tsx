@@ -55,19 +55,19 @@ const DeviceForm: React.FC<DeviceFormProps> = ({ onSubmit, onClose }) => {
         return (
           <div className="flex items-center justify-center space-x-2 text-primary-600">
             <Loader2 className="animate-spin" size={20} />
-            <span>Waiting for device verification... {countdown}s</span>
+            <span>Đang chờ xác thực thiết bị... {countdown}s</span>
           </div>
         );
       case 'success':
         return (
           <div className="text-center text-green-600">
-            Device added successfully!
+            Thêm thiết bị thành công!
           </div>
         );
       case 'failed':
         return (
           <div className="text-center text-red-600">
-            Device verification failed. Please try again.
+            Xác thực thiết bị thất bại. Vui lòng thử lại.
           </div>
         );
       default:
@@ -79,7 +79,7 @@ const DeviceForm: React.FC<DeviceFormProps> = ({ onSubmit, onClose }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Add New Device</h2>
+          <h2 className="text-xl font-semibold text-gray-800">Thêm thiết bị mới</h2>
           <button
             onClick={onClose}
             disabled={isVerifying}
@@ -92,7 +92,7 @@ const DeviceForm: React.FC<DeviceFormProps> = ({ onSubmit, onClose }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="deviceMac" className="block text-sm font-medium text-gray-700 mb-1">
-              MAC Address
+              Địa chỉ MAC
             </label>
             <input
               type="text"
@@ -102,13 +102,13 @@ const DeviceForm: React.FC<DeviceFormProps> = ({ onSubmit, onClose }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500"
               required
               disabled={isVerifying}
-              placeholder="Enter device MAC address"
+              placeholder="Nhập địa chỉ MAC"
             />
           </div>
 
           <div>
             <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-              Description
+              Mô tả
             </label>
             <input
               type="text"
@@ -118,7 +118,7 @@ const DeviceForm: React.FC<DeviceFormProps> = ({ onSubmit, onClose }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-500"
               required
               disabled={isVerifying}
-              placeholder="Enter device description"
+              placeholder="Nhập mô tả thiết bị"
             />
           </div>
 
@@ -135,7 +135,7 @@ const DeviceForm: React.FC<DeviceFormProps> = ({ onSubmit, onClose }) => {
               disabled={isVerifying}
               className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50"
             >
-              Cancel
+              Hủy
             </button>
             <button
               type="submit"
@@ -145,10 +145,10 @@ const DeviceForm: React.FC<DeviceFormProps> = ({ onSubmit, onClose }) => {
               {isVerifying ? (
                 <>
                   <Loader2 className="animate-spin mr-2" size={16} />
-                  Verifying...
+                  Đang xác thực...
                 </>
               ) : (
-                'Add Device'
+                'Thêm thiết bị'
               )}
             </button>
           </div>

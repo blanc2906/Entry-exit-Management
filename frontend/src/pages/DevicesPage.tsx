@@ -5,9 +5,9 @@ import { Pagination } from '../components/common/Pagination';
 import { useDevices } from '../hooks/useDevices';
 import { Device, DeviceFilters } from '../types/device';
 import DeviceForm from '../components/devices/DeviceForm';
-import DeviceUsersModal from '../components/devices/DeviceUsersModal';
 import { deviceService } from '../services/deviceService';
 import { User } from '../types/user';
+import { useNavigate } from 'react-router-dom';
 
 const DevicesPage: React.FC = () => {
   const {
@@ -26,17 +26,7 @@ const DevicesPage: React.FC = () => {
   });
 
   const [isAddDeviceModalOpen, setIsAddDeviceModalOpen] = useState(false);
-  const [selectedDeviceUsers, setSelectedDeviceUsers] = useState<{
-    device: Device | null;
-    users: (User & { fingerId: number })[];
-    loading: boolean;
-    error: string | null;
-  }>({
-    device: null,
-    users: [],
-    loading: false,
-    error: null,
-  });
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchDevices(filters);
@@ -52,60 +42,23 @@ const DevicesPage: React.FC = () => {
     }
   };
 
-  const handleViewUsers = async (device: Device) => {
-    setSelectedDeviceUsers(prev => ({ ...prev, device, loading: true, error: null }));
-    try {
-      const response = await deviceService.getDeviceUsers(device._id);
-      setSelectedDeviceUsers(prev => ({
-        ...prev,
-        users: response.users,
-        loading: false,
-      }));
-    } catch (error) {
-      console.error('Error fetching device users:', error);
-      setSelectedDeviceUsers(prev => ({
-        ...prev,
-        loading: false,
-        error: 'Failed to load users. Please try again.',
-      }));
-    }
-  };
-
-  const handleUserRemoved = async () => {
-    if (selectedDeviceUsers.device) {
-      // Refresh the users list
-      await handleViewUsers(selectedDeviceUsers.device);
-      // Refresh the devices list to update user count
-      await fetchDevices(filters);
-    }
-  };
-
-  const handleUserAdded = async () => {
-    if (selectedDeviceUsers.device) {
-      // Refresh the users list
-      await handleViewUsers(selectedDeviceUsers.device);
-      // Refresh the devices list to update user count
-      await fetchDevices(filters);
-    }
-  };
-
   const columns = [
     { 
       key: 'deviceMac' as keyof Device, 
-      header: 'MAC Address',
+      header: 'Địa chỉ MAC',
       render: (value: string | undefined) => value || '',
     },
     { 
       key: 'description' as keyof Device, 
-      header: 'Name',
+      header: 'Tên thiết bị',
       render: (value: string | undefined) => value || '',
     },
     { 
       key: 'users' as keyof Device, 
-      header: 'Users',
+      header: 'Nhân viên',
       render: (value: any[] | undefined, device: Device) => (
         <button 
-          onClick={() => handleViewUsers(device)}
+          onClick={() => navigate(`/devices/${device._id}/users`)}
           className="flex items-center hover:text-primary-600 transition-colors"
         >
           <Users size={18} className="text-gray-400 mr-2" />
@@ -115,18 +68,18 @@ const DevicesPage: React.FC = () => {
     },
     {
       key: 'isOnline' as keyof Device,
-      header: 'Status',
+      header: 'Trạng thái',
       render: (value: boolean | undefined) => (
         <div className="flex items-center">
           {value ? (
             <>
               <Wifi size={18} className="text-green-500 mr-2" />
-              <span className="text-green-500">Online</span>
+              <span className="text-green-500">Đang hoạt động</span>
             </>
           ) : (
             <>
               <WifiOff size={18} className="text-gray-500 mr-2" />
-              <span className="text-gray-500">Offline</span>
+              <span className="text-gray-500">Ngoại tuyến</span>
             </>
           )}
         </div>
@@ -134,7 +87,7 @@ const DevicesPage: React.FC = () => {
     },
     {
       key: '_id' as keyof Device,
-      header: 'Actions',
+      header: 'Thao tác',
       render: (_: string | undefined, device: Device) => (
         <div className="flex items-center space-x-3">
           <button 
@@ -167,13 +120,13 @@ const DevicesPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Devices Management</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Quản lí thiết bị</h1>
         <button
           onClick={() => setIsAddDeviceModalOpen(true)}
           className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
         >
           <Plus size={18} className="mr-2" />
-          Add Device
+          Thêm thiết bị
         </button>
       </div>
 
@@ -195,17 +148,6 @@ const DevicesPage: React.FC = () => {
         <DeviceForm
           onSubmit={handleAddDevice}
           onClose={() => setIsAddDeviceModalOpen(false)}
-        />
-      )}
-
-      {selectedDeviceUsers.device && (
-        <DeviceUsersModal
-          users={selectedDeviceUsers.users}
-          deviceName={selectedDeviceUsers.device.description || selectedDeviceUsers.device.deviceMac}
-          deviceId={selectedDeviceUsers.device._id}
-          onClose={() => setSelectedDeviceUsers(prev => ({ ...prev, device: null }))}
-          onUserRemoved={handleUserRemoved}
-          onUserAdded={handleUserAdded}
         />
       )}
     </div>

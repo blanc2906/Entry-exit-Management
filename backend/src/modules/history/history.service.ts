@@ -9,12 +9,10 @@ import { Device, DeviceDocument } from "src/schema/device.schema";
 import { ActivityGateway } from './activity.gateway';
 import { WorkShift } from '../../schema/workshift.schema';
 import { WorkSchedule } from '../../schema/workschedule.schema';
+import * as XLSX from 'xlsx';
+import { ExportHistoryDto } from './dto/export-history.dto';
 
 type AttendanceStatus = 'on-time' | 'late' | 'early' | 'absent' | 'overtime';
-
-interface WorkScheduleWithShifts extends Omit<WorkSchedule, 'shifts'> {
-    shifts: Map<string, WorkShift>;
-}
 
 @Injectable()
 export class HistoryService {
@@ -413,7 +411,14 @@ export class HistoryService {
             }
 
             if (userId) {
-                query.user = new Types.ObjectId(userId);
+                try {
+                    query.$or = [
+                        { user: new Types.ObjectId(userId) },
+                        { user: userId }
+                    ];
+                } catch (e) {
+                    query.user = userId;
+                }
             }
 
             if (startDate || endDate) {
@@ -494,5 +499,89 @@ export class HistoryService {
                 : new Date(log.date.toISOString().slice(0, 10) + 'T' + (log.time_out || '00:00:00')).toISOString(),
             type,
         };
+    }
+
+    async exportToExcel(exportHistoryDto: ExportHistoryDto): Promise<Buffer> {
+        const { startDate, endDate, userId } = exportHistoryDto;
+        
+        // Build query
+        const query: any = {};
+        if (startDate && endDate) {
+            query.date = {
+                $gte: new Date(startDate),
+                $lte: new Date(endDate)
+            };
+        }
+        if (userId) {
+            // Nếu userId là ObjectId (24 ký tự hex), filter cả ObjectId và string
+            if (/^[0-9a-fA-F]{24}$/.test(userId)) {
+                query.$or = [
+                    { user: new Types.ObjectId(userId) },
+                    { user: userId }
+                ];
+            } else {
+                // Nếu là mã nhân viên, tìm user theo userId rồi filter theo _id (string)
+                const user = await this.userModel.findOne({ userId });
+                if (user) {
+                    query.$or = [
+                        { user: user._id },
+                        { user: user._id.toString() }
+                    ];
+                } else {
+                    // Không tìm thấy user, trả về file rỗng
+                    const worksheet = XLSX.utils.json_to_sheet([]);
+                    const workbook = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(workbook, worksheet, 'Báo cáo chấm công');
+                    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+                }
+            }
+        }
+
+        // Get history records with populated user data
+        const histories = await this.historyModel.find(query)
+            .populate('user', 'userId name')
+            .sort({ date: 1, time_in: 1 })
+            .exec();
+
+        // Prepare data for Excel
+        const data = histories.map(history => {
+            const date = new Date(history.date);
+            const dayOfWeek = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][date.getDay()];
+            
+            return {
+                'Mã nhân viên': history.user.userId || '',
+                'Tên nhân viên': history.user.name || '',
+                'Ngày': date.toLocaleDateString('vi-VN'),
+                'Thứ': dayOfWeek,
+                'Vào': history.time_in || '',
+                'Ra': history.time_out || '',
+                'Giờ': history.workHours || 0,
+                'OT': history.overtime || 0
+            };
+        });
+
+        // Create worksheet
+        const worksheet = XLSX.utils.json_to_sheet(data);
+
+        // Set column widths
+        const columnWidths = [
+            { wch: 15 }, // Mã nhân viên
+            { wch: 25 }, // Tên nhân viên
+            { wch: 12 }, // Ngày
+            { wch: 10 }, // Thứ
+            { wch: 10 }, // Vào
+            { wch: 10 }, // Ra
+            { wch: 8 },  // Giờ
+            { wch: 8 }   // OT
+        ];
+        worksheet['!cols'] = columnWidths;
+
+        // Create workbook
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Báo cáo chấm công');
+
+        // Generate buffer
+        const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        return excelBuffer;
     }
 }

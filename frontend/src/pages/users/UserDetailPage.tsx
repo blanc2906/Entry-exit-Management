@@ -56,24 +56,24 @@ export const UserDetailPage: React.FC = () => {
 
   return (
     <div className="p-6">
-      <Card title="User Details" loading={loading}>
+      <Card title="Chi tiết nhân viên" loading={loading}>
         <Tabs
           items={[
             {
               key: 'info',
-              label: 'Basic Information',
+              label: 'Thông tin cơ bản',
               children: (
                 <div>
-                  <p><strong>Name:</strong> {user.name}</p>
+                  <p><strong>Tên:</strong> {user.name}</p>
                   <p><strong>Email:</strong> {user.email}</p>
-                  <p><strong>User ID:</strong> {user.userId}</p>
+                  <p><strong>Mã nhân viên:</strong> {user.userId}</p>
                   {/* Add more user information as needed */}
                 </div>
               )
             },
             {
               key: 'workSchedule',
-              label: 'Work Schedule',
+              label: 'Lịch làm việc',
               children: (
                 <UserWorkSchedule
                   userId={user._id}

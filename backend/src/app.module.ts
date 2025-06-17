@@ -6,7 +6,8 @@ import { UsersModule } from './modules/users/users.module';
 import { HistoryModule } from './modules/history/history.module';
 import { MqttModule } from './modules/mqtt/mqtt.module';
 import { WorkShiftModule } from './modules/workshift/workshift.module';
-import { WorkScheduleModule } from './modules/workschedule/workschedule.module'; 
+import { WorkScheduleModule } from './modules/workschedule/workschedule.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 
 @Module({
   imports: [  
@@ -20,7 +21,8 @@ import { WorkScheduleModule } from './modules/workschedule/workschedule.module';
     UsersModule,
     HistoryModule,
     WorkShiftModule,
-    WorkScheduleModule
+    WorkScheduleModule,
+    DashboardModule
   ], 
   controllers: [],
   providers: [],

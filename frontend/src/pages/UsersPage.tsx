@@ -89,12 +89,14 @@ const UsersPage: React.FC = () => {
   const handleRequestAddFingerprint = (userId: string) => {
     setSelectedUserId(userId);
     setRegistrationType('fingerprint');
+    setRequestStatus({ loading: false, error: null, success: false });
     setIsSelectDeviceModalOpen(true);
   };
 
   const handleRequestAddCardNumber = (userId: string) => {
     setSelectedUserId(userId);
     setRegistrationType('card');
+    setRequestStatus({ loading: false, error: null, success: false });
     setIsSelectDeviceModalOpen(true);
   };
 
@@ -111,11 +113,17 @@ const UsersPage: React.FC = () => {
         setIsSelectDeviceModalOpen(false);
         setRequestStatus({ loading: false, error: null, success: false });
       }, 1500);
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error requesting ${registrationType} registration:`, error);
+      let errorMsg = '';
+      if (error?.response?.data?.message?.includes('Device is offline')) {
+        errorMsg = 'Thiết bị đang ngoại tuyến, vui lòng chọn thiết bị khác hoặc kiểm tra lại kết nối.';
+      } else {
+        errorMsg = 'Yêu cầu đăng ký thất bại, vui lòng thử lại.';
+      }
       setRequestStatus({
         loading: false,
-        error: `Failed to request ${registrationType} registration`,
+        error: errorMsg,
         success: false,
       });
     }
@@ -144,11 +152,13 @@ const UsersPage: React.FC = () => {
 
   const renderDeleteConfirmMessage = (user: User) => (
     <div className="space-y-2">
-      <p>Are you sure you want to delete this user?</p>
+      <p>Bạn có chắc chắn muốn xóa nhân viên này?</p>
       <div className="bg-gray-50 p-3 rounded-lg">
-        <div className="font-medium">{user.name}</div>
-        <div className="text-sm text-gray-500">{user.userId}</div>
-        {user.email && <div className="text-sm text-gray-500">{user.email}</div>}
+        <div className="text-sm text-gray-700">
+          <div><span className="font-medium">Tên:</span> <span className="font-normal">{user.name}</span></div>
+          <div><span className="font-medium">Mã nhân viên:</span> <span className="font-normal">{user.userId}</span></div>
+          {user.email && <div><span className="font-medium">Email:</span> <span className="font-normal">{user.email}</span></div>}
+        </div>
         {user.fingerId && (
           <div className="text-sm text-gray-500 flex items-center">
             <Fingerprint size={14} className="mr-1" />
@@ -168,12 +178,12 @@ const UsersPage: React.FC = () => {
   const columns = [
     { 
       key: 'userId' as keyof User, 
-      header: 'User ID',
+      header: 'Mã nhân viên',
       render: (value: string | undefined) => value || '',
     },
     { 
       key: 'name' as keyof User, 
-      header: 'Name',
+      header: 'Tên',
       render: (value: string | undefined) => value || '',
     },
     { 
@@ -183,12 +193,12 @@ const UsersPage: React.FC = () => {
     },
     {
       key: 'workSchedule' as keyof User,
-      header: 'Work Schedule',
+      header: 'Lịch làm việc',
       render: (value: string | undefined) => getScheduleName(value),
     },
     {
       key: 'fingerTemplate' as keyof User,
-      header: 'Fingerprint',
+      header: 'Vân tay',
       render: (value: string | undefined, user: User) => (
         value ? (
           <div className="flex items-center justify-center">
@@ -199,14 +209,14 @@ const UsersPage: React.FC = () => {
             onClick={() => handleRequestAddFingerprint(user._id)}
             className="px-2 py-1 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50"
           >
-            Add Fingerprint
+            Thêm vân tay
           </button>
         )
       ),
     },
     {
       key: 'cardNumber' as keyof User,
-      header: 'Card Number',
+      header: 'Mã thẻ',
       render: (value: string | undefined, user: User) => (
         value ? (
           <div className="flex items-center justify-center">
@@ -218,14 +228,14 @@ const UsersPage: React.FC = () => {
             onClick={() => handleRequestAddCardNumber(user._id)}
             className="px-2 py-1 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50"
           >
-            Add Card
+            Thêm thẻ
           </button>
         )
       ),
     },
     {
       key: '_id' as keyof User,
-      header: 'Actions',
+      header: 'Thao tác',
       render: (_: string | undefined, user: User) => (
         <div className="flex items-center space-x-3">
           <button 
@@ -258,13 +268,13 @@ const UsersPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Users Management</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Quản lí nhân viên</h1>
         <button
           onClick={handleAddUser}
           className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
         >
           <Plus size={18} className="mr-2" />
-          Add User
+          Thêm nhân viên
         </button>
       </div>
 
@@ -307,10 +317,10 @@ const UsersPage: React.FC = () => {
       {showDeleteConfirm && userToDelete && (
         <ConfirmDialog
           isOpen={showDeleteConfirm}
-          title="Delete User"
+          title="Xóa nhân viên"
           message={renderDeleteConfirmMessage(userToDelete)}
-          confirmLabel="Delete User"
-          cancelLabel="Cancel"
+          confirmLabel="Xóa nhân viên"
+          cancelLabel="Hủy"
           isLoading={isDeleting}
           onConfirm={handleConfirmDelete}
           onCancel={() => {
