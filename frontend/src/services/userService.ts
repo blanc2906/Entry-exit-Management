@@ -45,9 +45,8 @@ export const userService = {
   },
 
   async requestAddFingerprint(userId: string, deviceId: string) {
-    const response = await axios.post(`${API_URL}/users/request-add-fingerprint`, {
-      userId,
-      deviceId,
+    const response = await axios.post(`${API_URL}/users/${userId}/request-bulk-fingerprint`, {
+      deviceIds: [deviceId],
     });
     return response.data;
   },
@@ -56,6 +55,13 @@ export const userService = {
     const response = await axios.post(`${API_URL}/users/request-add-cardNumber`, {
       userId,
       deviceId,
+    });
+    return response.data;
+  },
+
+  async requestBulkFingerprint(userId: string, deviceIds: string[]) {
+    const response = await axios.post(`${API_URL}/users/${userId}/request-bulk-fingerprint`, {
+      deviceIds,
     });
     return response.data;
   },

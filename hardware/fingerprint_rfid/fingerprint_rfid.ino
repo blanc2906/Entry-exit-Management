@@ -56,6 +56,7 @@ uint8_t lastUsedId = 0;
 String currentUserId = "";
 bool waitingForCardScan = false;
 bool isAPMode = false;
+bool isCardRegistrationMode = false; // Thêm biến mới để kiểm soát chế độ đăng ký thẻ
 
 String macAddress;
 String verifyDeviceTopic;
@@ -67,7 +68,9 @@ String addCardTopic;
 String fingerAttendanceTopic;
 String cardAttendanceTopic;
 String attendanceNotificationTopic;
-String currentRequestId = "";  
+String configDeviceTopic; // Thêm topic config
+String getConfigTopic; // Thêm topic lấy config
+String currentRequestId = "";
 // Add new variables for attendance response tracking
 bool waitingForAttendanceResponse = false;
 unsigned long lastAttendanceTime = 0;
@@ -77,6 +80,11 @@ const char* CARD_REGISTRATION_RESULT = "card_registration_result/";
 
 // Add variable for LCD state tracking
 String currentLCDText = "";
+
+// Thêm biến cho bulk fingerprint registration
+String targetDeviceIds = "";
+bool isBulkRegistrationMode = false;
+String bulkRegistrationUserId = "";
 
 // Add LCD helper function
 void updateLCD(const String& line1, const String& line2 = "") {
@@ -206,17 +214,17 @@ void handleSetup() {
   }
 }
 
-void startAPMode() {
-  WiFi.softAP("ESP32_Config", "12345678");
-  Serial.println("Started Access Point: ESP32_Config");
-  Serial.println("IP Address: " + WiFi.softAPIP().toString());
+// void startAPMode() {
+//   WiFi.softAP("ESP32_Config", "12345678");
+//   Serial.println("Started Access Point: ESP32_Config");
+//   Serial.println("IP Address: " + WiFi.softAPIP().toString());
 
-  server.on("/", handleRoot);
-  server.on("/setup", HTTP_POST, handleSetup);
-  server.begin();
+//   server.on("/", handleRoot);
+//   server.on("/setup", HTTP_POST, handleSetup);
+//   server.begin();
   
-  isAPMode = true;
-}
+//   isAPMode = true;
+// }
 
 bool connectToWiFi() {
   String savedSSID, savedPassword;
@@ -273,6 +281,8 @@ void setup(){
     addFingerTopic = "add-fingerprint/" + macAddress;
     importFingerTopic = "import-fingerprint/" + macAddress;
     addCardTopic = "add-cardnumber/" + macAddress;
+    configDeviceTopic = "config-device/" + macAddress; // Thêm topic config
+    getConfigTopic = "get-config/" + macAddress; // Thêm topic lấy config
     String attendedSuccessTopic = "attended-success/" + macAddress;
     attendanceNotificationTopic = "attendance-noti/" + macAddress;
 
@@ -317,6 +327,8 @@ void setup(){
     mqtt_client.subscribe(importFingerTopic.c_str());
     mqtt_client.subscribe(addCardTopic.c_str());
     mqtt_client.subscribe(attendanceNotificationTopic.c_str());
+    mqtt_client.subscribe(configDeviceTopic.c_str()); // Subscribe topic config
+    mqtt_client.subscribe(getConfigTopic.c_str()); // Subscribe topic lấy config
 
     // Initialize fingerprint sensor
     while (!Serial); 
@@ -370,6 +382,36 @@ void callback(char *topic, byte *payload, unsigned int length) {
   message[length] = '\0';
   
   Serial.println(message);
+
+  // Xử lý lấy config hiện tại
+  if (strcmp(topic, getConfigTopic.c_str()) == 0) {
+    Serial.println("Received get config request");
+    
+    // Parse JSON message để lấy requestId
+    DynamicJsonDocument doc(256);
+    DeserializationError error = deserializeJson(doc, message);
+    
+    String requestId = "";
+    // Handle nested data structure from NestJS
+    if (!error && doc.containsKey("data") && doc["data"].is<JsonObject>() && doc["data"].containsKey("requestId")) {
+      requestId = doc["data"]["requestId"].as<String>();
+    } else {
+      Serial.println("Could not find requestId in message, using fallback.");
+      requestId = String(millis());
+    }
+    
+    Serial.print("Using requestId: ");
+    Serial.println(requestId);
+    
+    sendCurrentConfig(requestId);
+    return;
+  }
+
+  // Xử lý config device
+  if (strcmp(topic, configDeviceTopic.c_str()) == 0) {
+    handleDeviceConfig(String(message));
+    return;
+  }
 
   if (strcmp(topic, verifyDeviceTopic.c_str()) == 0) {
     Serial.println("Received device verification request");
@@ -458,38 +500,132 @@ void callback(char *topic, byte *payload, unsigned int length) {
   }
 
   if (strcmp(topic, addFingerTopic.c_str()) == 0) {
-  Serial.println("Starting enrollment process...");
-  
-  // Parse JSON message
-  StaticJsonDocument<256> doc;
-  DeserializationError error = deserializeJson(doc, message);
-  
-  if (error) {
-    Serial.print("JSON parsing failed: ");
-    Serial.println(error.c_str());
-    // Fallback to using the raw message if parsing fails
-    currentUserId = String(message);
-  } else {
-    // Check if message has data field (NestJS MQTT format)
-    if (doc.containsKey("data")) {
-      currentUserId = doc["data"].as<String>();
-      Serial.print("Extracted userId from JSON data field: ");
-      Serial.println(currentUserId);
-    } else {
-      // Use raw message if no data field
+    Serial.println("Starting enrollment process...");
+    
+    // Parse JSON message
+    StaticJsonDocument<512> doc; // Tăng kích thước để xử lý JSON phức tạp hơn
+    DeserializationError error = deserializeJson(doc, message);
+    
+    if (error) {
+      Serial.print("JSON parsing failed: ");
+      Serial.println(error.c_str());
+      // Fallback to using the raw message if parsing fails
       currentUserId = String(message);
+      isBulkRegistrationMode = false;
+      targetDeviceIds = "";
+    } else {
+      // Check if this is a NestJS format with pattern and data fields
+      if (doc.containsKey("data")) {
+        // Get the data string
+        const char* dataString = doc["data"];
+        
+        // Parse the inner JSON in the data field
+        DynamicJsonDocument innerDoc(512);
+        DeserializationError innerError = deserializeJson(innerDoc, dataString);
+        
+        if (innerError) {
+          Serial.print("Inner JSON parsing failed: ");
+          Serial.println(innerError.c_str());
+          // Use the data string directly as userId
+          currentUserId = String(dataString);
+          isBulkRegistrationMode = false;
+          targetDeviceIds = "";
+        } else {
+          // Check if this is a bulk registration request
+          if (innerDoc.containsKey("userId") && innerDoc.containsKey("targetDeviceIds")) {
+            // Bulk registration mode
+            currentUserId = innerDoc["userId"].as<String>();
+            bulkRegistrationUserId = currentUserId; // Đảm bảo cả hai biến có cùng giá trị
+            isBulkRegistrationMode = true;
+            
+            // Convert targetDeviceIds array to string for later use
+            if (innerDoc["targetDeviceIds"].is<JsonArray>()) {
+              JsonArray deviceIdsArray = innerDoc["targetDeviceIds"];
+              targetDeviceIds = "";
+              for (JsonArray::iterator it = deviceIdsArray.begin(); it != deviceIdsArray.end(); ++it) {
+                if (targetDeviceIds.length() > 0) {
+                  targetDeviceIds += ",";
+                }
+                targetDeviceIds += it->as<String>();
+              }
+            }
+            
+            Serial.print("Bulk registration mode - User ID: ");
+            Serial.println(currentUserId);
+            Serial.print("Target devices: ");
+            Serial.println(targetDeviceIds);
+            
+            updateLCD("Place Finger");
+          } else if (innerDoc.containsKey("userId")) {
+            // Regular single device registration
+            currentUserId = innerDoc["userId"].as<String>();
+            isBulkRegistrationMode = false;
+            targetDeviceIds = "";
+            Serial.print("Single device registration - User ID: ");
+            Serial.println(currentUserId);
+          } else {
+            // Use the data string if no recognizable structure
+            currentUserId = String(dataString);
+            isBulkRegistrationMode = false;
+            targetDeviceIds = "";
+          }
+        }
+      } else if (doc.containsKey("userId") && doc.containsKey("targetDeviceIds")) {
+        // Direct bulk registration format (not NestJS)
+        currentUserId = doc["userId"].as<String>();
+        bulkRegistrationUserId = currentUserId;
+        isBulkRegistrationMode = true;
+        
+        // Convert targetDeviceIds array to string for later use
+        if (doc["targetDeviceIds"].is<JsonArray>()) {
+          JsonArray deviceIdsArray = doc["targetDeviceIds"];
+          targetDeviceIds = "";
+          for (JsonArray::iterator it = deviceIdsArray.begin(); it != deviceIdsArray.end(); ++it) {
+            if (targetDeviceIds.length() > 0) {
+              targetDeviceIds += ",";
+            }
+            targetDeviceIds += it->as<String>();
+          }
+        }
+        
+        Serial.print("Bulk registration mode (direct) - User ID: ");
+        Serial.println(currentUserId);
+        Serial.print("Target devices: ");
+        Serial.println(targetDeviceIds);
+        
+        updateLCD("Place Finger");
+      } else if (doc.containsKey("data")) {
+        // Regular single device registration
+        currentUserId = doc["data"].as<String>();
+        isBulkRegistrationMode = false;
+        targetDeviceIds = "";
+        Serial.print("Single device registration - User ID: ");
+        Serial.println(currentUserId);
+      } else {
+        // Use raw message if no recognizable structure
+        currentUserId = String(message);
+        isBulkRegistrationMode = false;
+        targetDeviceIds = "";
+      }
+    }
+    
+    uint8_t newId = enrollFingerprint();
+
+    if (newId > 0) {
+      Serial.printf("Successfully enrolled fingerprint for ID #%d\n", newId);
+      if (isBulkRegistrationMode) {
+        sendBulkFingerDataToServer(currentUserId, newId, targetDeviceIds);
+      } else {
+        sendFingerDataToServer(currentUserId, newId);
+      }
+    } else {
+      Serial.println("Enrollment failed");
+      // Reset bulk registration mode on failure
+      isBulkRegistrationMode = false;
+      targetDeviceIds = "";
+      bulkRegistrationUserId = "";
     }
   }
-  
-  uint8_t newId = enrollFingerprint();
-
-  if (newId > 0) {
-    Serial.printf("Successfully enrolled fingerprint for ID #%d\n", newId);
-    sendFingerDataToServer(currentUserId, newId);
-  } else {
-    Serial.println("Enrollment failed");
-  }
-}
 
   if (strcmp(topic, importFingerTopic.c_str()) == 0) {
   Serial.println("Starting fingerprint import process...");
@@ -556,7 +692,7 @@ void callback(char *topic, byte *payload, unsigned int length) {
   
   if (strcmp(topic, addCardTopic.c_str()) == 0)  {
     Serial.println("Starting card registration process...");
-    updateLCD("Scan Your Card","To Register");
+    updateLCD("Card Registration", "Scan Your Card");
     
     // Parse JSON message
     DynamicJsonDocument outerDoc(512);
@@ -604,9 +740,15 @@ void callback(char *topic, byte *payload, unsigned int length) {
       Serial.print("User ID to enroll card: ");
       Serial.println(currentUserId);
       waitingForCardScan = true;
+      isCardRegistrationMode = true; // Set chế độ đăng ký thẻ
       Serial.println("Please scan your card now...");
+      // Hiển thị thông báo rõ ràng hơn
+      updateLCD("Ready to Register", "Place Card Now");
     } else {
       Serial.println("No valid user ID found in message");
+      updateLCD("Registration Error", "Invalid User ID");
+      delay(3000);
+      updateLCD("Place Finger");
     }
 }
 
@@ -712,6 +854,8 @@ void reconnect() {
       mqtt_client.subscribe(importFingerTopic.c_str());
       mqtt_client.subscribe(addCardTopic.c_str());
       mqtt_client.subscribe(attendanceNotificationTopic.c_str());
+      mqtt_client.subscribe(configDeviceTopic.c_str()); // Subscribe topic config
+      mqtt_client.subscribe(getConfigTopic.c_str()); // Subscribe topic lấy config
       String fingerprintResultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
       mqtt_client.subscribe(fingerprintResultTopic.c_str());
 
@@ -741,7 +885,9 @@ uint8_t getFingerprintID() {
       updateLCD("Processing...");
       break;
     case FINGERPRINT_NOFINGER:
-      if (!waitingForAttendanceResponse) {
+      if (!waitingForAttendanceResponse && !isCardRegistrationMode && !isBulkRegistrationMode) {
+        updateLCD("Place Finger");
+      } else if (isBulkRegistrationMode) {
         updateLCD("Place Finger");
       }
       return p;
@@ -885,13 +1031,24 @@ uint8_t enrollFingerprint() {
 
 bool getFingerprintEnroll(uint8_t id) {
   int p = -1;
-  Serial.println("Waiting for valid finger to enroll");
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Place finger");
-  lcd.setCursor(0, 1);
-  lcd.print("to enroll #");
-  lcd.print(id);
+  
+  if (isBulkRegistrationMode) {
+    Serial.println("Waiting for valid finger to enroll (Bulk Mode)");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Place finger");
+    lcd.setCursor(0, 1);
+    lcd.print("to enroll #");
+    lcd.print(id);
+  } else {
+    Serial.println("Waiting for valid finger to enroll");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Place finger");
+    lcd.setCursor(0, 1);
+    lcd.print("to enroll #");
+    lcd.print(id);
+  }
   
   // Add timeout for first scan
   unsigned long startTime = millis();
@@ -1179,17 +1336,23 @@ uint8_t uploadFingerprintTemplate(const char* hexData, uint16_t id) {
 
 void sendFingerDataToServer(String userId, uint8_t fingerId) {
   String server_url = "http://" + serverIP + ":3000/users/add-fingerprint";
-  Serial.print("Sending request to: ");
+  Serial.println("DEBUG: ===== SENDING FINGERPRINT TO SERVER =====");
+  Serial.print("DEBUG: Server URL: ");
   Serial.println(server_url);
+  Serial.print("DEBUG: User ID: ");
+  Serial.println(userId);
+  Serial.print("DEBUG: Finger ID: ");
+  Serial.println(fingerId);
   
   HTTPClient http;
   http.begin(server_url);
   http.addHeader("Content-Type", "application/json");
   
+  Serial.println("DEBUG: Downloading fingerprint template...");
   String fingerTemplate = downloadFingerprintTemplate(fingerId);
   
   if (fingerTemplate.length() == 0) {
-    Serial.println("Failed to get fingerprint template, cannot send to server");
+    Serial.println("DEBUG: Failed to get fingerprint template");
     deleteFingerprint(fingerId);
     StaticJsonDocument<256> doc;
     doc["success"] = false;
@@ -1206,6 +1369,9 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
     return;
   }
   
+  Serial.print("DEBUG: Template length: ");
+  Serial.println(fingerTemplate.length());
+  
   StaticJsonDocument<4096> doc; 
   doc["userId"] = userId;
   doc["fingerId"] = fingerId;
@@ -1215,25 +1381,36 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
   String requestBody;
   serializeJson(doc, requestBody);
   
-  Serial.println("Sending POST request to server...");
-  Serial.print("Template length: ");
-  Serial.println(fingerTemplate.length());
+  Serial.println("DEBUG: Sending POST request to server...");
+  Serial.print("DEBUG: Request body length: ");
+  Serial.println(requestBody.length());
+  Serial.print("DEBUG: Request body: ");
+  Serial.println(requestBody);
   
   int httpResponseCode = http.POST(requestBody);
+  Serial.print("DEBUG: HTTP Response Code: ");
+  Serial.println(httpResponseCode);
   
-   if (httpResponseCode > 0) {
+  if (httpResponseCode > 0) {
     String response = http.getString();
+    Serial.print("DEBUG: Server Response: ");
     Serial.println(response);
     
     // Parse response để kiểm tra kết quả từ server
     StaticJsonDocument<512> responseDoc;
     DeserializationError error = deserializeJson(responseDoc, response);
     
+    if (error) {
+      Serial.print("DEBUG: JSON parsing error: ");
+      Serial.println(error.c_str());
+    }
+    
     if (error || !responseDoc["success"]) {
+      Serial.println("DEBUG: Server returned error, deleting fingerprint");
       // Nếu server báo lỗi, xóa vân tay
       deleteFingerprint(fingerId);
       
-      // Gửi thông báo lỗi
+      // Gửi thông báo lỗi qua MQTT
       StaticJsonDocument<256> errorDoc;
       errorDoc["success"] = false;
       errorDoc["error"] = "Server error: " + response;
@@ -1245,23 +1422,18 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
       String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
       mqtt_client.publish(resultTopic.c_str(), errorResponse.c_str());
     } else {
-      // Thành công
-      StaticJsonDocument<256> successDoc;
-      successDoc["success"] = true;
-      successDoc["userId"] = userId;
-      successDoc["fingerId"] = fingerId;
-      
-      String successResponse;
-      serializeJson(successDoc, successResponse);
-      
-      String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
-      mqtt_client.publish(resultTopic.c_str(), successResponse.c_str());
+      Serial.println("DEBUG: Server returned success");
+      // Hiển thị thông báo thành công trên LCD
+      updateLCD("Registration", "Success!");
+      delay(3000);
     }
   } else {
+    Serial.print("DEBUG: HTTP Error: ");
+    Serial.println(httpResponseCode);
     // Xóa vân tay nếu gửi HTTP thất bại
     deleteFingerprint(fingerId);
     
-    // Gửi thông báo lỗi
+    // Gửi thông báo lỗi qua MQTT
     StaticJsonDocument<256> doc;
     doc["success"] = false;
     doc["error"] = "HTTP Error: " + String(httpResponseCode);
@@ -1276,12 +1448,12 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
   }
   
   http.end();
-      
- 
+  Serial.println("DEBUG: ===== END SENDING FINGERPRINT =====");
 }
 
 void getTemplateFromServerWithUserId(String userId, uint16_t fingerId) {
   String url = "http://" + serverIP + ":3000/users/" + userId + "/get-finger-data";
+  //String url = "http://192.168.100.82:3000/users/" + userId + "/get-finger-data";
   Serial.print("Sending request to: ");
   Serial.println(url);
   
@@ -1386,6 +1558,9 @@ void sendCardNumberToServer(String userId, String cardNumber) {
   Serial.println("Sending POST request to server...");
   Serial.println("Request body: " + requestBody);
   
+  // Hiển thị đang xử lý
+  updateLCD("Processing...", "Please Wait");
+  
   int httpResponseCode = http.POST(requestBody);
   
   if (httpResponseCode > 0) {
@@ -1395,18 +1570,314 @@ void sendCardNumberToServer(String userId, String cardNumber) {
     
     waitingForCardScan = false;
     currentUserId = "";
+    isCardRegistrationMode = false; // Reset chế độ đăng ký thẻ
     
-    String successMsg = "{\"status\":\"success\",\"userId\":\"" + userId + "\",\"cardNumber\":\"" + cardNumber + "\"}";
-    mqtt_client.publish("card_registration_result", successMsg.c_str());
+    // Check if response code is 201 (success)
+    if (httpResponseCode == 201) {
+      updateLCD("Card Registered", "Successfully!");
+    } else {
+      updateLCD("Registration", "Failed!");
+    }
+    
+    // Delay to show the message for 3 seconds
+    delay(3000);
+    updateLCD("Place Finger");
     
   } else {
     Serial.println("HTTP Error: " + String(httpResponseCode));
     
-    String errorMsg = "{\"status\":\"error\",\"userId\":\"" + userId + "\",\"error\":\"" + String(httpResponseCode) + "\"}";
-    mqtt_client.publish("card_registration_result", errorMsg.c_str());
+    waitingForCardScan = false;
+    currentUserId = "";
+    isCardRegistrationMode = false; // Reset chế độ đăng ký thẻ
+    updateLCD("Network Error!", "Try Again");
+    
+    // Delay to show the error message for 3 seconds
+    delay(3000);
+    updateLCD("Place Finger");
   }
   
   http.end();
+}
+
+// Thêm hàm gửi config hiện tại
+void sendCurrentConfig(const String& requestId) {
+  Serial.println("Sending current device configuration");
+  
+  // Đọc config hiện tại từ EEPROM
+  String currentSSID, currentPassword;
+  loadCredentials(currentSSID, currentPassword);
+  
+  // Đọc IP server hiện tại
+  String currentServerIP = serverIP;
+  
+  // Tạo response JSON
+  StaticJsonDocument<512> doc;
+  doc["deviceMac"] = macAddress;
+  doc["requestId"] = requestId;
+  doc["success"] = true;
+  doc["config"]["ssid"] = currentSSID;
+  doc["config"]["password"] = currentPassword;
+  doc["config"]["serverIP"] = currentServerIP;
+  
+  String response;
+  serializeJson(doc, response);
+  
+  // Gửi response về backend
+  String responseTopic = "device/config-response/" + macAddress;
+  mqtt_client.publish(responseTopic.c_str(), response.c_str());
+  
+  Serial.println("Current config sent to backend");
+  Serial.print("SSID: ");
+  Serial.println(currentSSID);
+  Serial.print("Server IP: ");
+  Serial.println(currentServerIP);
+}
+
+// Thêm hàm xử lý config từ backend
+void handleDeviceConfig(const String& message) {
+  Serial.println("Received device configuration request");
+  updateLCD("Configuring...", "Please Wait");
+  
+  // Parse JSON message
+  DynamicJsonDocument doc(1024); // Tăng kích thước để xử lý JSON lồng nhau
+  DeserializationError error = deserializeJson(doc, message);
+  
+  if (error) {
+    Serial.print("JSON parsing failed: ");
+    Serial.println(error.c_str());
+    updateLCD("Config Error!", "Invalid JSON");
+    delay(3000);
+    updateLCD("Place Finger");
+    return;
+  }
+  
+  String newSSID = "";
+  String newPassword = "";
+  String newServerIP = "";
+  String requestId = "";
+  
+  // Trích xuất dữ liệu từ cấu trúc JSON lồng nhau của NestJS
+  if (doc.containsKey("data") && doc["data"].is<JsonObject>()) {
+    JsonObject outerData = doc["data"];
+    if (outerData.containsKey("data") && outerData["data"].is<JsonObject>()) {
+      JsonObject innerData = outerData["data"];
+      if (innerData.containsKey("ssid")) newSSID = innerData["ssid"].as<String>();
+      if (innerData.containsKey("password")) newPassword = innerData["password"].as<String>();
+      if (innerData.containsKey("serverIP")) newServerIP = innerData["serverIP"].as<String>();
+      if (innerData.containsKey("requestId")) requestId = innerData["requestId"].as<String>();
+    } else {
+        Serial.println("Inner 'data' object not found or not an object.");
+    }
+  } else {
+    Serial.println("Outer 'data' object not found or not an object.");
+  }
+
+  // Thêm log để kiểm tra giá trị
+  Serial.println("Parsed config values:");
+  Serial.print("SSID: "); Serial.println(newSSID);
+  Serial.print("Password: "); Serial.println(newPassword);
+  Serial.print("Server IP: "); Serial.println(newServerIP);
+  Serial.print("Request ID: "); Serial.println(requestId);
+
+  bool configChanged = false;
+  String responseMessage = "";
+  
+  // Validate and save WiFi credentials
+  if (newSSID.length() > 0 && newPassword.length() > 0) {
+    saveCredentials(newSSID, newPassword);
+    configChanged = true;
+    responseMessage += "WiFi credentials updated. ";
+    Serial.println("WiFi credentials saved");
+  }
+  
+  // Validate and save server IP
+  if (newServerIP.length() > 0 && isValidIP(newServerIP)) {
+    saveServerIP(newServerIP);
+    serverIP = newServerIP;
+    configChanged = true;
+    responseMessage += "Server IP updated to: " + newServerIP + ". ";
+    Serial.print("Server IP updated to: ");
+    Serial.println(newServerIP);
+  }
+  
+  // Gửi phản hồi về backend nếu có requestId
+  if (requestId.length() > 0) {
+    StaticJsonDocument<256> responseDoc;
+    responseDoc["deviceMac"] = macAddress;
+    responseDoc["requestId"] = requestId;
+    responseDoc["success"] = configChanged;
+    responseDoc["message"] = configChanged ? responseMessage : "No valid configuration provided";
+    
+    String response;
+    serializeJson(responseDoc, response);
+    
+    String responseTopic = "device/response/" + macAddress;
+    mqtt_client.publish(responseTopic.c_str(), response.c_str());
+    Serial.println("Configuration response sent.");
+  } else {
+    Serial.println("No requestId found, cannot send response.");
+  }
+  
+  if (configChanged) {
+    updateLCD("Config Updated!", "Rebooting...");
+    delay(3000);
+    ESP.restart(); // Restart để áp dụng config mới
+  } else {
+    updateLCD("Config Failed!", "Invalid Data");
+    delay(3000);
+    updateLCD("Place Finger");
+  }
+}
+
+void sendBulkFingerDataToServer(String userId, uint8_t fingerId, String targetDeviceIds) {
+  String server_url = "http://" + serverIP + ":3000/users/add-fingerprint";
+  Serial.println("DEBUG: ===== SENDING BULK FINGERPRINT TO SERVER =====");
+  Serial.print("DEBUG: Server URL: ");
+  Serial.println(server_url);
+  Serial.print("DEBUG: User ID: ");
+  Serial.println(userId);
+  Serial.print("DEBUG: Finger ID: ");
+  Serial.println(fingerId);
+  Serial.print("DEBUG: Target Device IDs: ");
+  Serial.println(targetDeviceIds);
+  
+  HTTPClient http;
+  http.begin(server_url);
+  http.addHeader("Content-Type", "application/json");
+  
+  Serial.println("DEBUG: Downloading fingerprint template...");
+  String fingerTemplate = downloadFingerprintTemplate(fingerId);
+  
+  if (fingerTemplate.length() == 0) {
+    Serial.println("DEBUG: Failed to get fingerprint template");
+    deleteFingerprint(fingerId);
+    StaticJsonDocument<256> doc;
+    doc["success"] = false;
+    doc["error"] = "Failed to get fingerprint template";
+    doc["userId"] = userId;
+    doc["fingerId"] = fingerId;
+    
+    String response;
+    serializeJson(doc, response);
+    
+    String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+    mqtt_client.publish(resultTopic.c_str(), response.c_str());
+    
+    // Reset bulk registration mode
+    isBulkRegistrationMode = false;
+    targetDeviceIds = "";
+    bulkRegistrationUserId = "";
+    
+    delay(3000);
+    return;
+  }
+  
+  Serial.print("DEBUG: Template length: ");
+  Serial.println(fingerTemplate.length());
+  
+  // Tạo JSON với thông tin bulk registration
+  StaticJsonDocument<8192> doc; // Tăng kích thước để chứa template và device IDs
+  doc["userId"] = userId;
+  doc["fingerId"] = fingerId;
+  doc["fingerTemplate"] = fingerTemplate;
+  doc["deviceMac"] = macAddress;
+  
+  // Thêm targetDeviceIds nếu có
+  if (targetDeviceIds.length() > 0) {
+    // Tạo array JSON đúng cách
+    JsonArray deviceIdsArray = doc.createNestedArray("targetDeviceIds");
+    
+    int startPos = 0;
+    int commaPos = targetDeviceIds.indexOf(',');
+    while (commaPos >= 0) {
+      String deviceId = targetDeviceIds.substring(startPos, commaPos);
+      deviceIdsArray.add(deviceId);
+      startPos = commaPos + 1;
+      commaPos = targetDeviceIds.indexOf(',', startPos);
+    }
+    // Add the last device ID
+    if (startPos < targetDeviceIds.length()) {
+      String deviceId = targetDeviceIds.substring(startPos);
+      deviceIdsArray.add(deviceId);
+    }
+  }
+  
+  String requestBody;
+  serializeJson(doc, requestBody);
+  
+  Serial.println("DEBUG: Sending POST request to server...");
+  Serial.print("DEBUG: Request body length: ");
+  Serial.println(requestBody.length());
+  Serial.print("DEBUG: Request body: ");
+  Serial.println(requestBody);
+  
+  int httpResponseCode = http.POST(requestBody);
+  Serial.print("DEBUG: HTTP Response Code: ");
+  Serial.println(httpResponseCode);
+  
+  if (httpResponseCode > 0) {
+    String response = http.getString();
+    Serial.print("DEBUG: Server Response: ");
+    Serial.println(response);
+    
+    // Parse response để kiểm tra kết quả từ server
+    StaticJsonDocument<512> responseDoc;
+    DeserializationError error = deserializeJson(responseDoc, response);
+    
+    if (error) {
+      Serial.print("DEBUG: JSON parsing error: ");
+      Serial.println(error.c_str());
+    }
+    
+    if (error || !responseDoc["success"]) {
+      Serial.println("DEBUG: Server returned error, deleting fingerprint");
+      // Nếu server báo lỗi, xóa vân tay
+      deleteFingerprint(fingerId);
+      
+      // Gửi thông báo lỗi qua MQTT
+      StaticJsonDocument<256> errorDoc;
+      errorDoc["success"] = false;
+      errorDoc["error"] = "Server error: " + response;
+      errorDoc["userId"] = userId;
+      errorDoc["fingerId"] = fingerId;
+      String errorResponse;
+      serializeJson(errorDoc, errorResponse);
+      
+      String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+      mqtt_client.publish(resultTopic.c_str(), errorResponse.c_str());
+    } else {
+      Serial.println("DEBUG: Server returned success");
+      // Hiển thị thông báo thành công trên LCD
+      updateLCD("Registration", "Success!");
+      delay(3000);
+    }
+  } else {
+    Serial.print("DEBUG: HTTP Error: ");
+    Serial.println(httpResponseCode);
+    // Xóa vân tay nếu gửi HTTP thất bại
+    deleteFingerprint(fingerId);
+    
+    // Gửi thông báo lỗi qua MQTT
+    StaticJsonDocument<256> doc;
+    doc["success"] = false;
+    doc["error"] = "HTTP Error: " + String(httpResponseCode);
+    doc["userId"] = userId;
+    doc["fingerId"] = fingerId;
+    
+    String response;
+    serializeJson(doc, response);
+    
+    String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+    mqtt_client.publish(resultTopic.c_str(), response.c_str());
+  }
+  
+  // Reset bulk registration mode
+  isBulkRegistrationMode = false;
+  targetDeviceIds = "";
+  bulkRegistrationUserId = "";
+  
+  http.end();
+  Serial.println("DEBUG: ===== END SENDING BULK FINGERPRINT =====");
 }
 
 void loop() {
@@ -1453,7 +1924,11 @@ void loop() {
   // Check timeout for attendance response
   if (waitingForAttendanceResponse && (millis() - lastAttendanceTime > ATTENDANCE_TIMEOUT)) {
     waitingForAttendanceResponse = false;
-    updateLCD("Place Finger");
+    if (!isCardRegistrationMode && !isBulkRegistrationMode) {
+      updateLCD("Place Finger");
+    } else if (isBulkRegistrationMode) {
+      updateLCD("Place Finger");
+    }
   }
   
   if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
@@ -1466,10 +1941,10 @@ void loop() {
     }
     
     if (waitingForCardScan && currentUserId != "") {
-      updateLCD("Registering Card");
+      updateLCD("Card Detected!", "Processing...");
       sendCardNumberToServer(currentUserId, uidString);
     } else {
-      updateLCD("Processing...");
+      updateLCD("Card Detected!", "Processing...");
       mqtt_client.publish(cardAttendanceTopic.c_str(), uidString.c_str());
       
       waitingForAttendanceResponse = true;

@@ -8,6 +8,8 @@ import DeviceForm from '../components/devices/DeviceForm';
 import { deviceService } from '../services/deviceService';
 import { User } from '../types/user';
 import { useNavigate } from 'react-router-dom';
+import DeviceConfigModal from '../components/devices/DeviceConfigModal';
+import { DeviceConfig } from '../types/deviceConfig';
 
 const DevicesPage: React.FC = () => {
   const {
@@ -26,6 +28,10 @@ const DevicesPage: React.FC = () => {
   });
 
   const [isAddDeviceModalOpen, setIsAddDeviceModalOpen] = useState(false);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [selectedDeviceForConfig, setSelectedDeviceForConfig] = useState<Device | null>(null);
+  const [currentConfig, setCurrentConfig] = useState<DeviceConfig | null>(null);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -40,6 +46,37 @@ const DevicesPage: React.FC = () => {
     } catch (error) {
       throw error;
     }
+  };
+
+  const handleOpenConfigModal = async (device: Device) => {
+    setSelectedDeviceForConfig(device);
+    setIsConfigModalOpen(true);
+    setIsLoadingConfig(true);
+    setCurrentConfig(null);
+    try {
+      const response = await deviceService.getDeviceConfig(device._id);
+      if (response.success) {
+        setCurrentConfig(response.config);
+      } else {
+        console.error('Failed to get device config:', response.message);
+        // Handle error display in modal if needed
+      }
+    } catch (error) {
+      console.error('Error fetching device config:', error);
+    } finally {
+      setIsLoadingConfig(false);
+    }
+  };
+
+  const handleCloseConfigModal = () => {
+    setSelectedDeviceForConfig(null);
+    setIsConfigModalOpen(false);
+  };
+
+  const handleConfigUpdate = () => {
+    console.log('Configuration updated successfully!');
+    // Optionally, show a success toast/notification
+    fetchDevices(filters); // Re-fetch devices to show updated status if any
   };
 
   const columns = [
@@ -90,6 +127,16 @@ const DevicesPage: React.FC = () => {
       header: 'Thao tác',
       render: (_: string | undefined, device: Device) => (
         <div className="flex items-center space-x-3">
+          <button
+            className="text-gray-400 hover:text-primary-600"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleOpenConfigModal(device);
+            }}
+            title="Cấu hình thiết bị"
+          >
+            <Settings size={18} />
+          </button>
           <button 
             className="text-gray-400 hover:text-primary-600"
             onClick={(e) => {
@@ -148,6 +195,16 @@ const DevicesPage: React.FC = () => {
         <DeviceForm
           onSubmit={handleAddDevice}
           onClose={() => setIsAddDeviceModalOpen(false)}
+        />
+      )}
+
+      {isConfigModalOpen && selectedDeviceForConfig && (
+        <DeviceConfigModal
+          device={selectedDeviceForConfig}
+          initialConfig={currentConfig}
+          onClose={handleCloseConfigModal}
+          onConfigUpdate={handleConfigUpdate}
+          isLoadingConfig={isLoadingConfig}
         />
       )}
     </div>

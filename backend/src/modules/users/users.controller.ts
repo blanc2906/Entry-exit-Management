@@ -1,4 +1,4 @@
-import { Body, Controller, Logger, Post, Param, Get, Query, Delete, HttpCode, HttpStatus, Put } from "@nestjs/common";
+import { Body, Controller, Logger, Post, Param, Get, Query, Delete, HttpCode, HttpStatus, Put, Inject, forwardRef } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
@@ -6,6 +6,8 @@ import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
 import { FindAllUsersDto } from "./dto/find-all-user.dto";
 import { MessagePattern, Payload } from "@nestjs/microservices";
 import { UpdateWorkScheduleDto } from "./dto/update-workschedule.dto";
+import { AppWebSocketGateway } from "../websocket/websocket.gateway";
+import { AddBulkFingerprintDto } from "./dto/add-bulk-fingerprint.dto";
 
 @Controller('users')
 export class UsersController {
@@ -13,6 +15,8 @@ export class UsersController {
 
   constructor( 
     private readonly usersService : UsersService,
+    @Inject(forwardRef(() => AppWebSocketGateway))
+    private readonly webSocketGateway: AppWebSocketGateway
   ) {}
 
   @Post('create-user')
@@ -32,18 +36,26 @@ export class UsersController {
     return await this.usersService.removeUser(userId);
   }
 
-  @Post('request-add-fingerprint')
-  async requestAddFingerprint(
-    @Body('userId') userId: string, 
-    @Body('deviceId') deviceId: string) {
-    await this.usersService.requestAddFingerprint(userId, deviceId);
-  }
-
   @Post('add-fingerprint')
   async addFingerprint(@Body() addFingerprintDto : AddFingerprintDto) {
-    const user = await this.usersService.addFingerprint(addFingerprintDto);
+    const result = await this.usersService.addFingerprint(addFingerprintDto);
+    
+    // Gửi thông báo qua WebSocket
+    this.webSocketGateway.sendFingerprintNotification({
+      type: 'fingerprint_added',
+      message: result.message,
+      user: {
+        _id: result.user._id,
+        name: result.user.name,
+        email: result.user.email
+      },
+      timestamp: new Date().toISOString()
+    });
+    
     return {
-        success: true
+        success: true,
+        message: result.message,
+        user: result.user
     };
 }
 
@@ -63,23 +75,76 @@ export class UsersController {
   }
   @Post('add-cardNumber')
   async addCardNumber(@Body() addCardNumberDto : AddCardNumberDto) {
-    return await this.usersService.addCardNumber(addCardNumberDto);
+    try {
+      const result = await this.usersService.addCardNumber(addCardNumberDto);
+      
+      // Gửi thông báo thành công qua WebSocket
+      this.webSocketGateway.sendFingerprintNotification({
+        type: 'card_added',
+        message: result.message,
+        user: {
+          _id: result.user._id,
+          name: result.user.name,
+          email: result.user.email
+        },
+        timestamp: new Date().toISOString(),
+        success: true
+      });
+      
+      return {
+          success: true,
+          message: result.message,
+          user: result.user
+      };
+    } catch (error) {
+      // Gửi thông báo thất bại qua WebSocket
+      this.webSocketGateway.sendFingerprintNotification({
+        type: 'card_failed',
+        message: `Đăng ký thẻ thất bại: ${error.message}`,
+        user: {
+          _id: addCardNumberDto.userId,
+          name: `User ${addCardNumberDto.userId}`,
+          email: ''
+        },
+        timestamp: new Date().toISOString(),
+        success: false,
+        error: error.message
+      });
+      
+      throw error;
+    }
   }
 
   @MessagePattern('fingerprint_registration_result/#')
   async handleFingerprintRegistrationResult(
-  @Payload() data: {
-    success: boolean;
-    error?: string;
-    userId: string;
+    @Payload() data: {
+      success: boolean;
+      error?: string;
+      userId: string;
+      fingerId?: number;
+    }
+  ) {
+    if (data.success) {
+      console.log(`Fingerprint registration successful for user ${data.userId}`);
+      // Không cần gửi thông báo vì đã có HTTP POST xử lý rồi
+    } else {
+      console.log(`Fingerprint registration failed for user ${data.userId}: ${data.error}`);
+      
+      // Chỉ gửi thông báo thất bại qua WebSocket
+      this.webSocketGateway.sendFingerprintNotification({
+        type: 'fingerprint_failed',
+        message: `Đăng ký vân tay thất bại: ${data.error}`,
+        user: {
+          _id: data.userId,
+          name: `User ${data.userId}`,
+          email: ''
+        },
+        timestamp: new Date().toISOString(),
+        success: false,
+        error: data.error
+      });
+    }
   }
-) {
-  if (data.success) {
-    console.log(`Fingerprint registration successful for user ${data.userId}`);
-  } else {
-    console.log(`Fingerprint registration failed for user ${data.userId}: ${data.error}`);
-  }
-}
 
   @Get(':userId/work-schedule')
   async getUserWorkSchedule(@Param('userId') userId: string) {
@@ -97,5 +162,13 @@ export class UsersController {
   @Delete(':userId/work-schedule')
   async removeUserWorkSchedule(@Param('userId') userId: string) {
     return await this.usersService.removeUserWorkSchedule(userId);
+  }
+
+  @Post(':userId/request-bulk-fingerprint')
+  async requestAddBulkFingerprint(
+    @Param('userId') userId: string,
+    @Body() addBulkFingerprintDto: AddBulkFingerprintDto
+  ) {
+    return this.usersService.requestAddBulkFingerprint(userId, addBulkFingerprintDto.deviceIds);
   }
 }

@@ -2,8 +2,7 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import { Document, Types } from "mongoose";
 import { User } from "./user.schema";
-import { Device } from "./device.schema";
-import { WorkShift } from "./workshift.schema";
+
 
 export type HistoryDocument = History & Document;
 

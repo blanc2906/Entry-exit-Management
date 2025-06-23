@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
@@ -9,6 +9,9 @@ import { WorkSchedule, WorkScheduleSchema } from 'src/schema/workschedule.schema
 import { WorkShift, WorkShiftSchema } from 'src/schema/workshift.schema';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigService } from '@nestjs/config';
+import { HistoryModule } from '../history/history.module';
+import { WebSocketModule } from '../websocket/websocket.module';
+import { DevicesModule } from '../devices/devices.module';
 
 @Module({
   imports: [
@@ -33,6 +36,9 @@ import { ConfigService } from '@nestjs/config';
         inject: [ConfigService],
       },
     ]),
+    forwardRef(() => HistoryModule),
+    WebSocketModule,
+    forwardRef(() => DevicesModule),
   ],
   controllers: [UsersController],
   providers: [UsersService],

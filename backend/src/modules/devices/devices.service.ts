@@ -1,6 +1,7 @@
 // Update imports
 import { Inject, Injectable, NotFoundException, RequestTimeoutException, HttpException, HttpStatus } from '@nestjs/common';
 import { CreateDeviceDto } from './dto/create-device.dto';
+import { ConfigDeviceDto } from './dto/config-device.dto';
 import { Device, DeviceDocument } from 'src/schema/device.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -21,6 +22,9 @@ export class DevicesService {
     string,
     (verified: boolean) => void
   > = new Map();
+
+  private readonly configCallbacks: Map<string, (config: any) => void> = new Map();
+  private readonly configTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(
     @Inject('MQTT_CLIENT') private readonly mqttClient: ClientProxy,
@@ -486,16 +490,107 @@ export class DevicesService {
   }
 
   async updateDeviceStatus(deviceId: string, status: string) {
-    if (!['online', 'offline'].includes(status)) {
-      throw new HttpException('Invalid status value. Must be either "online" or "offline"', HttpStatus.BAD_REQUEST);
+    try {
+      return await this.deviceModel.findByIdAndUpdate(
+        deviceId,
+        { status },
+        { new: true }
+      );
+    } catch (error) {
+      throw new Error(`Failed to update device status: ${error.message}`);
     }
+  }
 
-    const device = await this.deviceModel.findById(deviceId);
-    if (!device) {
-      throw new NotFoundException('Device not found');
+  async configDevice(deviceId: string, configData: ConfigDeviceDto) {
+    try {
+      const device = await this.deviceModel.findById(deviceId);
+      if (!device) {
+        throw new NotFoundException('Device not found');
+      }
+
+      if (device.status !== 'online') {
+        throw new HttpException('Device is offline', HttpStatus.BAD_REQUEST);
+      }
+
+      // Gửi lệnh config qua MQTT
+      const topic = `config-device/${device.deviceMac}`;
+      const message = {
+        data: {
+          ssid: configData.ssid,
+          password: configData.password,
+          serverIP: configData.serverIP,
+          requestId: Date.now().toString()
+        }
+      };
+
+      await this.mqttClient.emit(topic, message).toPromise();
+
+      return {
+        success: true,
+        message: 'Configuration command sent to device',
+        deviceId: deviceId
+      };
+    } catch (error) {
+      throw new HttpException('Failed to configure device', HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
 
-    device.status = status;
-    return await device.save();
+  async getDeviceConfig(deviceId: string) {
+    try {
+      const device = await this.deviceModel.findById(deviceId);
+      if (!device) {
+        throw new NotFoundException('Device not found');
+      }
+
+      if (device.status !== 'online') {
+        throw new HttpException('Device is offline', HttpStatus.BAD_REQUEST);
+      }
+
+      const normalizedMac = device.deviceMac.replace(/:/g, '');
+
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.cleanupConfigRequest(normalizedMac);
+          reject(new HttpException('Config request timeout', HttpStatus.REQUEST_TIMEOUT));
+        }, 10000); // 10 seconds timeout
+
+        this.configTimeouts.set(normalizedMac, timeout);
+
+        this.configCallbacks.set(normalizedMac, (config: any) => {
+          this.cleanupConfigRequest(normalizedMac);
+          resolve({
+            success: true,
+            config: config,
+            deviceId: deviceId
+          });
+        });
+
+        // Gửi lệnh lấy config
+        const topic = `get-config/${device.deviceMac}`;
+        const message = {
+          requestId: Date.now().toString()
+        };
+
+        this.mqttClient.emit(topic, message).toPromise();
+      });
+    } catch (error) {
+      throw new HttpException('Failed to get device config', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  async handleConfigResponse(deviceMac: string, configData: any) {
+    const callback = this.configCallbacks.get(deviceMac);
+    if (callback) {
+      callback(configData.config);
+    } else {
+      console.warn(`No callback found for deviceMac: ${deviceMac}`);
+    }
+  }
+
+  private cleanupConfigRequest(deviceMac: string) {
+    const timeout = this.configTimeouts.get(deviceMac);
+    if (timeout) clearTimeout(timeout);
+    this.configTimeouts.delete(deviceMac);
+    this.configCallbacks.delete(deviceMac);
   }
 }

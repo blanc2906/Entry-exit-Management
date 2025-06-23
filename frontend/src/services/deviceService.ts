@@ -103,4 +103,14 @@ export const deviceService = {
   deleteAllUsers: async (deviceId: string): Promise<DeviceResponse> => {
     return deviceApi.post(`/${deviceId}/delete-all-users`);
   },
+
+  async updateDeviceConfig(deviceId: string, configData: { ssid: string; password: string; serverIP: string; }) {
+    const response = await deviceApi.post(`/${deviceId}/config`, configData);
+    return response.data;
+  },
+
+  async getDeviceConfig(deviceId: string) {
+    const response = await deviceApi.get(`/${deviceId}/config`);
+    return response.data;
+  }
 }; 

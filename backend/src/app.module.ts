@@ -8,6 +8,7 @@ import { MqttModule } from './modules/mqtt/mqtt.module';
 import { WorkShiftModule } from './modules/workshift/workshift.module';
 import { WorkScheduleModule } from './modules/workschedule/workschedule.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { WebSocketModule } from './modules/websocket/websocket.module';
 
 @Module({
   imports: [  
@@ -16,6 +17,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
       envFilePath: ['.env'],
     }),
     MongooseModule.forRoot('mongodb://localhost:27017/datn'), 
+    WebSocketModule,
     MqttModule,
     DevicesModule,
     UsersModule,

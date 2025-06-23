@@ -11,6 +11,10 @@ import { userService } from '../services/userService';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import { workScheduleService } from '../services/workScheduleService';
 import { WorkSchedule } from '../types/userWorkSchedule';
+import { useNotification } from '../hooks/useRecentActivity';
+import { message, notification as antdNotification } from 'antd';
+import cardGuide from '../assets/card-guide.png';
+import fingerprintGuide from '../assets/fingerprint-guide.png';
 
 const UsersPage: React.FC = () => {
   const {
@@ -34,11 +38,9 @@ const UsersPage: React.FC = () => {
   const [requestStatus, setRequestStatus] = useState<{
     loading: boolean;
     error: string | null;
-    success: boolean;
   }>({
     loading: false,
     error: null,
-    success: false,
   });
 
   // State for delete confirmation
@@ -48,9 +50,29 @@ const UsersPage: React.FC = () => {
 
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
 
+  // Hook để lắng nghe thông báo fingerprint và card
+  const notification = useNotification();
+
   useEffect(() => {
     fetchUsers(filters);
-  }, [fetchUsers, filters]);
+  }, [filters]);
+
+  // Hiển thị thông báo khi nhận được notification fingerprint hoặc card
+  useEffect(() => {
+    if (notification) {
+      setIsSelectDeviceModalOpen(false);
+      setRequestStatus({ loading: false, error: null });
+      
+      if (notification.type === 'fingerprint_added' || notification.type === 'card_added') {
+        message.success(notification.message);
+      } else if (notification.type === 'fingerprint_failed' || notification.type === 'card_failed') {
+        message.error(notification.message);
+      }
+      
+      // Refresh danh sách users để cập nhật trạng thái
+      fetchUsers(filters);
+    }
+  }, [notification]);
 
   useEffect(() => {
     // Lấy danh sách work schedules để map id sang tên
@@ -89,30 +111,44 @@ const UsersPage: React.FC = () => {
   const handleRequestAddFingerprint = (userId: string) => {
     setSelectedUserId(userId);
     setRegistrationType('fingerprint');
-    setRequestStatus({ loading: false, error: null, success: false });
+    setRequestStatus({ loading: false, error: null });
     setIsSelectDeviceModalOpen(true);
   };
 
   const handleRequestAddCardNumber = (userId: string) => {
     setSelectedUserId(userId);
     setRegistrationType('card');
-    setRequestStatus({ loading: false, error: null, success: false });
+    setRequestStatus({ loading: false, error: null });
     setIsSelectDeviceModalOpen(true);
   };
 
-  const handleDeviceSelect = async (deviceId: string) => {
-    setRequestStatus({ loading: true, error: null, success: false });
+  const handleDeviceSelect = async (deviceIds: string[]) => {
+    if (deviceIds.length === 0) return;
+
+    setRequestStatus({ loading: true, error: null });
     try {
       if (registrationType === 'fingerprint') {
-        await userService.requestAddFingerprint(selectedUserId, deviceId);
+        await userService.requestBulkFingerprint(selectedUserId, deviceIds);
       } else {
-        await userService.requestAddCardNumber(selectedUserId, deviceId);
+        // Card registration still uses the first selected device
+        await userService.requestAddCardNumber(selectedUserId, deviceIds[0]);
       }
-      setRequestStatus({ loading: false, error: null, success: true });
-      setTimeout(() => {
-        setIsSelectDeviceModalOpen(false);
-        setRequestStatus({ loading: false, error: null, success: false });
-      }, 1500);
+      setIsSelectDeviceModalOpen(false);
+      antdNotification.success({
+        message: 'Gửi yêu cầu thành công',
+        description: (
+          <div>
+            <p>Vui lòng làm theo hướng dẫn trên thiết bị.</p>
+            <img 
+              src={registrationType === 'card' ? cardGuide : fingerprintGuide} 
+              alt="hướng dẫn"
+              className="mt-4 w-48"
+            />
+          </div>
+        ),
+        duration: 10,
+      });
+
     } catch (error: any) {
       console.error(`Error requesting ${registrationType} registration:`, error);
       let errorMsg = '';
@@ -124,7 +160,6 @@ const UsersPage: React.FC = () => {
       setRequestStatus({
         loading: false,
         error: errorMsg,
-        success: false,
       });
     }
   };
@@ -205,12 +240,14 @@ const UsersPage: React.FC = () => {
             <Fingerprint size={18} className="text-primary-600" />
           </div>
         ) : (
-          <button
-            onClick={() => handleRequestAddFingerprint(user._id)}
-            className="px-2 py-1 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50"
-          >
-            Thêm vân tay
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handleRequestAddFingerprint(user._id)}
+              className="px-2 py-1 text-xs font-medium text-primary-600 border border-primary-600 rounded hover:bg-primary-50"
+            >
+              Thêm vân tay
+            </button>
+          </div>
         )
       ),
     },
@@ -307,7 +344,7 @@ const UsersPage: React.FC = () => {
 
       {isSelectDeviceModalOpen && (
         <SelectDeviceModal
-          onSelect={handleDeviceSelect}
+          onConfirm={handleDeviceSelect}
           onClose={() => setIsSelectDeviceModalOpen(false)}
           registrationType={registrationType}
           requestStatus={requestStatus}

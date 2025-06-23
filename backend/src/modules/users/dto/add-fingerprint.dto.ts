@@ -1,19 +1,24 @@
-import { IsNotEmpty, IsString } from "class-validator";
+import { IsNotEmpty, IsString, IsNumber, IsOptional, IsArray } from "class-validator";
 
 export class AddFingerprintDto {
     @IsString()
     @IsNotEmpty()
     userId: string;
 
-    @IsString()
+    @IsNumber()
     @IsNotEmpty()
     fingerId: number;
 
     @IsString()
-    //@IsNotEmpty()
-    fingerTemplate? : string;
+    @IsOptional()
+    fingerTemplate?: string;
 
     @IsString()
     @IsNotEmpty()
-    deviceMac : string;
+    deviceMac: string;
+
+    @IsArray()
+    @IsString({ each: true })
+    @IsOptional()
+    targetDeviceIds?: string[];
 }

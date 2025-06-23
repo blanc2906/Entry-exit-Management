@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from 'src/schema/user.schema';
 import { ClientsModule, Transport } from '@nestjs/microservices';
@@ -10,9 +10,12 @@ import { HistoryService } from './history.service';
 import { MqttModule } from '../mqtt/mqtt.module';
 import { DevicesModule } from '../devices/devices.module';
 import { Device, DeviceSchema } from 'src/schema/device.schema';
-import { ActivityGateway } from './activity.gateway';
 import { WorkShift, WorkShiftSchema } from '../../schema/workshift.schema';
 import { WorkSchedule, WorkScheduleSchema } from '../../schema/workschedule.schema';
+import { WebSocketModule } from '../websocket/websocket.module';
+import { AttendanceService } from './services/attendance.service';
+import { HistoryQueryService } from './services/history-query.service';
+import { MqttAttendanceHandler } from './handlers/mqtt-attendance.handler';
 
 @Module({
   imports : [
@@ -23,12 +26,17 @@ import { WorkSchedule, WorkScheduleSchema } from '../../schema/workschedule.sche
       {name: WorkShift.name, schema: WorkShiftSchema},
       {name: WorkSchedule.name, schema: WorkScheduleSchema}
     ]),
-    UsersModule,
+    forwardRef(() => UsersModule),
     MqttModule,
-    DevicesModule
+    forwardRef(() => DevicesModule),
+    WebSocketModule
   ],
-  controllers: [HistoryController],
-  providers: [HistoryService, ActivityGateway],
+  controllers: [HistoryController, MqttAttendanceHandler],
+  providers: [
+    HistoryService,
+    AttendanceService,
+    HistoryQueryService
+  ],
   exports: [HistoryService]
 })
 export class HistoryModule {}

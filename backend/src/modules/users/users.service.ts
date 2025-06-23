@@ -7,11 +7,13 @@ import { ClientMqtt } from "@nestjs/microservices";
 import { DELETE_FINGERPRINT, REQUEST_ADD_CARDNUMBER, REQUEST_ADD_FINGERPRINT } from "src/shared/constants/mqtt.constant";
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
 import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
+import { AddBulkFingerprintDto } from "./dto/add-bulk-fingerprint.dto";
 import { Device, DeviceDocument } from "src/schema/device.schema";
 import { UserDevice, UserDeviceDocument } from "src/schema/user-device.schema";
 import { WorkSchedule } from "src/schema/workschedule.schema";
 import { WorkShift } from "src/schema/workshift.schema";
 import { UpdateWorkScheduleDto } from "./dto/update-workschedule.dto";
+import { DevicesService } from "../devices/devices.service";
 
 @Injectable()
 export class UsersService {
@@ -23,7 +25,7 @@ export class UsersService {
     private readonly deviceModel: Model<DeviceDocument>,
 
     @InjectModel(UserDevice.name)
-    private readonly userdeviceModel : Model<UserDeviceDocument>,
+    private readonly userdeviceModel: Model<UserDeviceDocument>,
 
     @InjectModel(WorkSchedule.name)
     private readonly workScheduleModel: Model<WorkSchedule>,
@@ -32,7 +34,9 @@ export class UsersService {
     private readonly workShiftModel: Model<WorkShift>,
 
     @Inject('MQTT_CLIENT')
-    private readonly mqttClient: ClientMqtt
+    private readonly mqttClient: ClientMqtt,
+
+    private readonly devicesService: DevicesService
   ) {}
 
   getTopic(baseTopic : string, deviceMac : string) {
@@ -164,22 +168,64 @@ export class UsersService {
     }
   }
 
-  async requestAddFingerprint(userId: string, deviceId : string){
-    const device = await this.deviceModel.findById(deviceId);
-    if(!device){
-      throw new Error('Device not found');
-    }
-
-    if (device.status !== "online") {
-      throw new HttpException('Device is offline, cannot connect', HttpStatus.BAD_REQUEST);
-    }
-    const deviceMac = device.deviceMac;
-
-    await this.mqttClient.emit(this.getTopic(REQUEST_ADD_FINGERPRINT, deviceMac), userId);
-  }
-  
-  async addFingerprint(addFingerprintDto : AddFingerprintDto): Promise<UserDocument> {
+  async requestAddBulkFingerprint(userId: string, deviceIds: string[]) {
     try {
+      // Kiểm tra user có tồn tại không
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+      }
+
+      // Kiểm tra tất cả thiết bị có tồn tại và online không
+      const devices = await this.deviceModel.find({ 
+        _id: { $in: deviceIds } 
+      });
+
+      if (devices.length !== deviceIds.length) {
+        throw new HttpException('Some devices not found', HttpStatus.NOT_FOUND);
+      }
+
+      const offlineDevices = devices.filter(device => device.status !== "online");
+      if (offlineDevices.length > 0) {
+        throw new HttpException(
+          `Devices offline: ${offlineDevices.map(d => d.deviceMac).join(', ')}`, 
+          HttpStatus.BAD_REQUEST
+        );
+      }
+
+      // Lấy thiết bị đầu tiên để thực hiện thêm vân tay
+      const firstDevice = devices[0];
+      
+      // Gửi request đến thiết bị đầu tiên với thông tin về tất cả thiết bị
+      await this.mqttClient.emit(
+        this.getTopic(REQUEST_ADD_FINGERPRINT, firstDevice.deviceMac), 
+        JSON.stringify({
+          userId: userId,
+          targetDeviceIds: deviceIds
+        })
+      );
+
+      return {
+        message: `Request sent to device ${firstDevice.deviceMac} for fingerprint registration`,
+        targetDevices: devices.map(d => ({ id: d._id, deviceMac: d.deviceMac }))
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(`Failed to request bulk fingerprint: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  async addFingerprint(addFingerprintDto: AddFingerprintDto): Promise<{ user: UserDocument; message: string }> {
+    try {
+      console.log('Received addFingerprintDto:', JSON.stringify(addFingerprintDto));
+      
+      // Validate userId
+      if (!addFingerprintDto.userId || typeof addFingerprintDto.userId !== 'string') {
+        throw new Error('Invalid userId provided');
+      }
+
       const user = await this.userModel.findById(addFingerprintDto.userId);
       
       if (!user) {
@@ -210,8 +256,32 @@ export class UsersService {
         await device.save();
       }
 
-      return await user.save();
+      // Nếu có targetDeviceIds, thực hiện import vào các thiết bị khác
+      if (addFingerprintDto.targetDeviceIds && addFingerprintDto.targetDeviceIds.length > 0) {
+        console.log('Processing targetDeviceIds:', addFingerprintDto.targetDeviceIds);
+        const otherDeviceIds = addFingerprintDto.targetDeviceIds.filter(id => id !== device._id.toString());
+        
+        for (const deviceId of otherDeviceIds) {
+          try {
+            await this.devicesService.addUserToDevice(deviceId, user._id.toString());
+            console.log(`Successfully added user to device ${deviceId}`);
+          } catch (error) {
+            console.error(`Failed to add user to device ${deviceId}:`, error);
+            // Continue with other devices even if one fails
+          }
+        }
+      }
+
+      const savedUser = await user.save();
+      
+      const successMessage = `Thêm vân tay thành công cho nhân viên ${user.name}`;
+      
+      return {
+        user: savedUser,
+        message: successMessage
+      };
     } catch (error) {
+      console.error('Error in addFingerprint:', error);
       throw new Error(`Failed to add fingerprint: ${error.message}`);
     }
   }
@@ -265,17 +335,27 @@ export class UsersService {
     await this.mqttClient.emit(this.getTopic(REQUEST_ADD_CARDNUMBER, deviceMac), userId);
   }
 
-  async addCardNumber(addCardNumberDto : AddCardNumberDto): Promise<UserDocument> {
+  async addCardNumber(addCardNumberDto : AddCardNumberDto): Promise<{ user: UserDocument; message: string }> {
     try {
       const user = await this.userModel.findById(addCardNumberDto.userId);
       
       if (!user) {
-        throw new Error('User not found');
+        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
       }
 
       const device = await this.deviceModel.findOne({ deviceMac: addCardNumberDto.deviceMac });
       if (!device) {
-        throw new Error('Device not found');
+        throw new HttpException('Device not found', HttpStatus.NOT_FOUND);
+      }
+
+      // Check if card number already exists
+      const existingUserWithCard = await this.userModel.findOne({ 
+        cardNumber: addCardNumberDto.cardNumber,
+        _id: { $ne: user._id } // Exclude current user from check
+      });
+      
+      if (existingUserWithCard) {
+        throw new HttpException('Card number already exists with another user', HttpStatus.BAD_REQUEST);
       }
 
       user.cardNumber = addCardNumberDto.cardNumber;
@@ -286,9 +366,20 @@ export class UsersService {
         await device.save(); // Save the device document with the updated users array
       }
 
-      return await user.save();
+      const savedUser = await user.save();
+      
+      // Gửi thông báo thành công
+      const successMessage = `Thêm thẻ thành công cho nhân viên ${user.name}`;
+      
+      return {
+        user: savedUser,
+        message: successMessage
+      };
     } catch (error) {
-      throw new Error(`Failed to add cardnumber: ${error.message}`);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(`Failed to add card number: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
