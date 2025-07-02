@@ -4,6 +4,7 @@ import { Table } from '../components/common/Table';
 import { Pagination } from '../components/common/Pagination';
 import { UserFilters } from '../components/users/UserFilters';
 import UserForm from '../components/users/UserForm';
+import UserEditModal from '../components/users/UserEditModal';
 import SelectDeviceModal from '../components/users/SelectDeviceModal';
 import { useUsers } from '../hooks/useUsers';
 import { User, UserFilters as UserFiltersType } from '../types/user';
@@ -32,6 +33,8 @@ const UsersPage: React.FC = () => {
   });
 
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
+  const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isSelectDeviceModalOpen, setIsSelectDeviceModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [registrationType, setRegistrationType] = useState<'fingerprint' | 'card'>('fingerprint');
@@ -47,6 +50,14 @@ const UsersPage: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // State for delete fingerprint/card confirmation
+  const [showDeleteFingerprintConfirm, setShowDeleteFingerprintConfirm] = useState(false);
+  const [showDeleteCardConfirm, setShowDeleteCardConfirm] = useState(false);
+  const [userToDeleteFingerprint, setUserToDeleteFingerprint] = useState<User | null>(null);
+  const [userToDeleteCard, setUserToDeleteCard] = useState<User | null>(null);
+  const [isDeletingFingerprint, setIsDeletingFingerprint] = useState(false);
+  const [isDeletingCard, setIsDeletingCard] = useState(false);
 
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
 
@@ -67,6 +78,10 @@ const UsersPage: React.FC = () => {
         message.success(notification.message);
       } else if (notification.type === 'fingerprint_failed' || notification.type === 'card_failed') {
         message.error(notification.message);
+      } else if (notification.type === 'fingerprint_deleted') {
+        message.success(notification.message);
+      } else if (notification.type === 'card_deleted') {
+        message.success(notification.message);
       }
       
       // Refresh danh sách users để cập nhật trạng thái
@@ -185,6 +200,70 @@ const UsersPage: React.FC = () => {
     }
   };
 
+  const handleEditUser = (user: User) => {
+    setSelectedUser(user);
+    setIsEditUserModalOpen(true);
+  };
+
+  const handleUpdateUser = async (userData: { name?: string; email?: string; workSchedule?: string }) => {
+    if (!selectedUser) return;
+    
+    try {
+      await userService.updateUser(selectedUser._id, userData);
+      message.success('Cập nhật thông tin nhân viên thành công');
+      await fetchUsers(filters);
+    } catch (error: any) {
+      console.error('Error updating user:', error);
+      throw error; // Re-throw để UserEditModal xử lý
+    }
+  };
+
+  const handleDeleteFingerprintClick = (user: User) => {
+    setUserToDeleteFingerprint(user);
+    setShowDeleteFingerprintConfirm(true);
+  };
+
+  const handleConfirmDeleteFingerprint = async () => {
+    if (!userToDeleteFingerprint) return;
+    
+    try {
+      setIsDeletingFingerprint(true);
+      await userService.deleteFingerprint(userToDeleteFingerprint._id);
+      message.success('Xóa vân tay thành công');
+      await fetchUsers(filters);
+    } catch (error: any) {
+      console.error('Error deleting fingerprint:', error);
+      message.error(error?.response?.data?.message || 'Có lỗi xảy ra khi xóa vân tay');
+    } finally {
+      setIsDeletingFingerprint(false);
+      setShowDeleteFingerprintConfirm(false);
+      setUserToDeleteFingerprint(null);
+    }
+  };
+
+  const handleDeleteCardClick = (user: User) => {
+    setUserToDeleteCard(user);
+    setShowDeleteCardConfirm(true);
+  };
+
+  const handleConfirmDeleteCard = async () => {
+    if (!userToDeleteCard) return;
+    
+    try {
+      setIsDeletingCard(true);
+      await userService.deleteCard(userToDeleteCard._id);
+      message.success('Xóa thẻ thành công');
+      await fetchUsers(filters);
+    } catch (error: any) {
+      console.error('Error deleting card:', error);
+      message.error(error?.response?.data?.message || 'Có lỗi xảy ra khi xóa thẻ');
+    } finally {
+      setIsDeletingCard(false);
+      setShowDeleteCardConfirm(false);
+      setUserToDeleteCard(null);
+    }
+  };
+
   const renderDeleteConfirmMessage = (user: User) => (
     <div className="space-y-2">
       <p>Bạn có chắc chắn muốn xóa nhân viên này?</p>
@@ -236,8 +315,17 @@ const UsersPage: React.FC = () => {
       header: 'Vân tay',
       render: (value: string | undefined, user: User) => (
         value ? (
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-center space-x-2">
             <Fingerprint size={18} className="text-primary-600" />
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteFingerprintClick(user);
+              }}
+              className="px-2 py-1 text-xs font-medium text-red-600 border border-red-600 rounded hover:bg-red-50"
+            >
+              Xóa
+            </button>
           </div>
         ) : (
           <div className="flex items-center space-x-2">
@@ -256,9 +344,18 @@ const UsersPage: React.FC = () => {
       header: 'Mã thẻ',
       render: (value: string | undefined, user: User) => (
         value ? (
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-center space-x-2">
             <CreditCard size={18} className="text-primary-600" />
-            <span className="ml-2 text-sm text-gray-600">{value}</span>
+            <span className="text-sm text-gray-600">{value}</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteCardClick(user);
+              }}
+              className="px-2 py-1 text-xs font-medium text-red-600 border border-red-600 rounded hover:bg-red-50"
+            >
+              Xóa
+            </button>
           </div>
         ) : (
           <button
@@ -274,26 +371,17 @@ const UsersPage: React.FC = () => {
       key: '_id' as keyof User,
       header: 'Thao tác',
       render: (_: string | undefined, user: User) => (
-        <div className="flex items-center space-x-3">
-          <button 
-            className="text-gray-400 hover:text-primary-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              console.log('Edit user:', user._id);
-            }}
-          >
-            <Edit size={18} />
-          </button>
-          <button 
-            className="text-gray-400 hover:text-red-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDeleteClick(user);
-            }}
-          >
-            <Trash size={18} />
-          </button>
-        </div>
+        <button
+          className="flex items-center px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleEditUser(user);
+          }}
+          title="Sửa"
+        >
+          <Edit size={18} className="mr-2" />
+          Sửa
+        </button>
       ),
     },
   ];
@@ -363,6 +451,72 @@ const UsersPage: React.FC = () => {
           onCancel={() => {
             setShowDeleteConfirm(false);
             setUserToDelete(null);
+          }}
+        />
+      )}
+
+      {isEditUserModalOpen && selectedUser && (
+        <UserEditModal
+          isOpen={isEditUserModalOpen}
+          onClose={() => setIsEditUserModalOpen(false)}
+          user={selectedUser}
+          onSubmit={handleUpdateUser}
+        />
+      )}
+
+      {showDeleteFingerprintConfirm && userToDeleteFingerprint && (
+        <ConfirmDialog
+          isOpen={showDeleteFingerprintConfirm}
+          title="Xóa vân tay"
+          message={
+            <div className="space-y-2">
+              <p>Bạn có chắc chắn muốn xóa vân tay của nhân viên này?</p>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-700">
+                  <div><span className="font-medium">Tên:</span> <span className="font-normal">{userToDeleteFingerprint.name}</span></div>
+                  <div><span className="font-medium">Mã nhân viên:</span> <span className="font-normal">{userToDeleteFingerprint.userId}</span></div>
+                </div>
+                <div className="text-sm text-gray-500 flex items-center mt-2">
+                  <Fingerprint size={14} className="mr-1" />
+                  Vân tay sẽ bị xóa khỏi tất cả thiết bị
+                </div>
+              </div>
+            </div>
+          }
+          confirmLabel="Xóa vân tay"
+          cancelLabel="Hủy"
+          isLoading={isDeletingFingerprint}
+          onConfirm={handleConfirmDeleteFingerprint}
+          onCancel={() => {
+            setShowDeleteFingerprintConfirm(false);
+            setUserToDeleteFingerprint(null);
+          }}
+        />
+      )}
+
+      {showDeleteCardConfirm && userToDeleteCard && (
+        <ConfirmDialog
+          isOpen={showDeleteCardConfirm}
+          title="Xóa thẻ"
+          message={
+            <div className="space-y-2">
+              <p>Bạn có chắc chắn muốn xóa thẻ của nhân viên này?</p>
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <div className="text-sm text-gray-700">
+                  <div><span className="font-medium">Tên:</span> <span className="font-normal">{userToDeleteCard.name}</span></div>
+                  <div><span className="font-medium">Mã nhân viên:</span> <span className="font-normal">{userToDeleteCard.userId}</span></div>
+                  <div><span className="font-medium">Mã thẻ:</span> <span className="font-normal">{userToDeleteCard.cardNumber}</span></div>
+                </div>
+              </div>
+            </div>
+          }
+          confirmLabel="Xóa thẻ"
+          cancelLabel="Hủy"
+          isLoading={isDeletingCard}
+          onConfirm={handleConfirmDeleteCard}
+          onCancel={() => {
+            setShowDeleteCardConfirm(false);
+            setUserToDeleteCard(null);
           }}
         />
       )}

@@ -126,36 +126,17 @@ const DevicesPage: React.FC = () => {
       key: '_id' as keyof Device,
       header: 'Thao tác',
       render: (_: string | undefined, device: Device) => (
-        <div className="flex items-center space-x-3">
-          <button
-            className="text-gray-400 hover:text-primary-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleOpenConfigModal(device);
-            }}
-            title="Cấu hình thiết bị"
-          >
-            <Settings size={18} />
-          </button>
-          <button 
-            className="text-gray-400 hover:text-primary-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              console.log('Edit device:', device._id);
-            }}
-          >
-            <Edit size={18} />
-          </button>
-          <button 
-            className="text-gray-400 hover:text-red-600"
-            onClick={(e) => {
-              e.stopPropagation();
-              deleteDevice(device._id);
-            }}
-          >
-            <Trash size={18} />
-          </button>
-        </div>
+        <button
+          className="flex items-center justify-center px-3 py-2 border border-blue-500 text-blue-500 rounded hover:bg-blue-500 hover:text-white transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleOpenConfigModal(device);
+          }}
+          title="Cấu hình thiết bị"
+        >
+          <Settings size={18} className="mr-2" />
+          Cấu hình
+        </button>
       ),
     },
   ];

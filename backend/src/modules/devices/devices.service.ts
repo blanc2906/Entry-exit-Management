@@ -401,7 +401,7 @@ export class DevicesService {
 
       const userDevices = await this.userDeviceModel
         .find({ device: device._id })
-        .populate('user', 'name email username createdAt')
+        .populate('user', 'name email userId username createdAt')
         .exec();
 
       console.log('userDevices found:', userDevices.length);
@@ -429,6 +429,7 @@ export class DevicesService {
           _id: (userDevice.user as any)._id,
           name: (userDevice.user as any).name,
           email: (userDevice.user as any).email,
+          userId: (userDevice.user as any).userId,
           username: (userDevice.user as any).username,
           createdAt: (userDevice.user as any).createdAt,
           fingerId: userDevice.fingerId
@@ -449,6 +450,7 @@ export class DevicesService {
         _id: (userDevice.user as any)._id,
         name: (userDevice.user as any).name,
         email: (userDevice.user as any).email,
+        userId: (userDevice.user as any).userId,
         username: (userDevice.user as any).username,
         createdAt: (userDevice.user as any).createdAt,
         fingerId: userDevice.fingerId

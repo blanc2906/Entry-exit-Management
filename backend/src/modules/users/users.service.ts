@@ -8,12 +8,16 @@ import { DELETE_FINGERPRINT, REQUEST_ADD_CARDNUMBER, REQUEST_ADD_FINGERPRINT } f
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
 import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
 import { AddBulkFingerprintDto } from "./dto/add-bulk-fingerprint.dto";
+import { UpdateUserDto } from "./dto/update-user.dto";
+import { DeleteFingerprintDto } from "./dto/delete-fingerprint.dto";
+import { DeleteCardDto } from "./dto/delete-card.dto";
 import { Device, DeviceDocument } from "src/schema/device.schema";
 import { UserDevice, UserDeviceDocument } from "src/schema/user-device.schema";
 import { WorkSchedule } from "src/schema/workschedule.schema";
 import { WorkShift } from "src/schema/workshift.schema";
 import { UpdateWorkScheduleDto } from "./dto/update-workschedule.dto";
 import { DevicesService } from "../devices/devices.service";
+import { MqttService } from "../mqtt/mqtt.service";
 
 @Injectable()
 export class UsersService {
@@ -36,7 +40,8 @@ export class UsersService {
     @Inject('MQTT_CLIENT')
     private readonly mqttClient: ClientMqtt,
 
-    private readonly devicesService: DevicesService
+    private readonly devicesService: DevicesService,
+    private readonly mqttService: MqttService
   ) {}
 
   getTopic(baseTopic : string, deviceMac : string) {
@@ -391,77 +396,145 @@ export class UsersService {
     return user;
   }
 
-  async getUserWorkSchedule(userId: string) {
+  async updateUser(userId: string, updateUserDto: UpdateUserDto): Promise<UserDocument> {
     try {
-      const user = await this.userModel.findById(userId)
-        .populate({
-          path: 'workSchedule',
-          populate: {
-            path: 'shifts',
-            model: 'WorkShift'
-          }
+      const user = await this.userModel.findById(userId);
+      if (!user) {
+        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+      }
+
+      // Kiểm tra email mới có bị trùng không (nếu có cập nhật email)
+      if (updateUserDto.email && updateUserDto.email !== user.email) {
+        const existingUserWithEmail = await this.userModel.findOne({ 
+          email: updateUserDto.email,
+          _id: { $ne: userId } // Loại trừ user hiện tại
         });
-
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      return user.workSchedule;
-    } catch (error) {
-      throw new Error(`Failed to get user work schedule: ${error.message}`);
-    }
-  }
-
-  async updateUserWorkSchedule(userId: string, updateWorkScheduleDto: UpdateWorkScheduleDto) {
-    try {
-      const user = await this.userModel.findById(userId);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      // Kiểm tra workSchedule có tồn tại không
-      const workSchedule = await this.workScheduleModel.findById(updateWorkScheduleDto.workSchedule);
-      if (!workSchedule) {
-        throw new Error('Work schedule not found');
-      }
-
-      // Nếu có cập nhật shifts
-      if (updateWorkScheduleDto.shifts) {
-        // Kiểm tra tất cả các shift có tồn tại không
-        for (const shiftData of updateWorkScheduleDto.shifts) {
-          const shift = await this.workShiftModel.findById(shiftData.shift);
-          if (!shift) {
-            throw new Error(`Work shift not found: ${shiftData.shift}`);
-          }
+        if (existingUserWithEmail) {
+          throw new HttpException('Email already exists', HttpStatus.BAD_REQUEST);
         }
-
-        // Cập nhật shifts trong workSchedule
-        workSchedule.shifts = new Map();
-        for (const shiftData of updateWorkScheduleDto.shifts) {
-          workSchedule.shifts.set(shiftData.day, new Types.ObjectId(shiftData.shift.toString()));
-        }
-        await workSchedule.save();
       }
 
-      // Cập nhật workSchedule cho user
-      user.workSchedule = new Types.ObjectId(workSchedule._id.toString());
-      return await user.save();
+      // Chuẩn bị dữ liệu cập nhật
+      const updateData: any = {
+        ...updateUserDto,
+        updatedAt: new Date()
+      };
+
+      // Xử lý workSchedule nếu có
+      if (updateUserDto.workSchedule) {
+        updateData.workSchedule = new Types.ObjectId(updateUserDto.workSchedule);
+      }
+
+      const updatedUser = await this.userModel.findByIdAndUpdate(
+        userId,
+        updateData,
+        { new: true, runValidators: true }
+      );
+
+      return updatedUser;
     } catch (error) {
-      throw new Error(`Failed to update user work schedule: ${error.message}`);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(`Failed to update user: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async removeUserWorkSchedule(userId: string) {
+  async deleteFingerprint(deleteFingerprintDto: DeleteFingerprintDto): Promise<{ message: string; deletedDevices: string[] }> {
     try {
-      const user = await this.userModel.findById(userId);
+      const user = await this.userModel.findById(deleteFingerprintDto.userId);
       if (!user) {
-        throw new Error('User not found');
+        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
       }
 
-      user.workSchedule = null;
-      return await user.save();
+      // Lấy tất cả thiết bị có vân tay của user
+      const userDevices = await this.userdeviceModel
+        .find({ user: user._id })
+        .populate<{ device: DeviceDocument }>('device');
+
+      if (userDevices.length === 0) {
+        throw new HttpException('No fingerprint found for this user', HttpStatus.NOT_FOUND);
+      }
+
+      const deletedDevices: string[] = [];
+
+      // Xóa vân tay từ tất cả thiết bị
+      for (const userDevice of userDevices) {
+        const device = userDevice.device;
+        
+        try {
+          // Gửi lệnh xóa vân tay đến thiết bị
+         await this.mqttService.deleteFingerprint(
+          device.deviceMac,
+          userDevice.fingerId,
+        )
+          
+          deletedDevices.push(device.deviceMac);
+        } catch (error) {
+          console.error(`Failed to delete fingerprint from device ${device.deviceMac}:`, error);
+          // Continue with other devices even if one fails
+        }
+      }
+
+      // Xóa tất cả records từ database
+      await this.userdeviceModel.deleteMany({ user: user._id });
+
+      // Cập nhật user document
+      user.fingerTemplate = null;
+      user.updatedAt = new Date();
+      await user.save();
+
+      // Cập nhật tất cả device documents
+      for (const userDevice of userDevices) {
+        await this.deviceModel.updateOne(
+          { _id: userDevice.device._id },
+          { $pull: { users: user._id } }
+        );
+      }
+
+      const message = `Đã xóa tất cả vân tay của ${user.name} từ ${deletedDevices.length} thiết bị`;
+
+      return {
+        message,
+        deletedDevices
+      };
     } catch (error) {
-      throw new Error(`Failed to remove user work schedule: ${error.message}`);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(`Failed to delete fingerprint: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
+
+  async deleteCard(deleteCardDto: DeleteCardDto): Promise<{ message: string }> {
+    try {
+      const user = await this.userModel.findById(deleteCardDto.userId);
+      if (!user) {
+        throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+      }
+
+      if (!user.cardNumber) {
+        throw new HttpException('User does not have a card number', HttpStatus.BAD_REQUEST);
+      }
+
+      // Use $unset to remove the cardNumber field completely, avoiding sparse index issues
+      await this.userModel.findByIdAndUpdate(
+        deleteCardDto.userId,
+        { 
+          $unset: { cardNumber: 1 },
+          updatedAt: new Date()
+        }
+      );
+
+      return {
+        message: `Đã xóa thẻ của ${user.name} thành công`
+      };
+    } catch (error) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new HttpException(`Failed to delete card: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
 }

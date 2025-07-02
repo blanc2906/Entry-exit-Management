@@ -262,7 +262,7 @@ const AttendancePage: React.FC = () => {
                         <div className="text-xs text-gray-400">({record.check_in_device.deviceMac})</div>
                       </div>
                       <div className="text-sm text-gray-500">
-                        Phương thức: <span className="capitalize">{record.check_in_auth_method}</span>
+                        Phương thức: <span className="capitalize">{record.check_in_auth_method === 'fingerprint' ? 'vân tay' : record.check_in_auth_method === 'card' ? 'thẻ' : (record.check_in_auth_method || '-')}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -274,7 +274,7 @@ const AttendancePage: React.FC = () => {
                             <div className="text-xs text-gray-400">({record.check_out_device?.deviceMac})</div>
                           </div>
                           <div className="text-sm text-gray-500">
-                            Phương thức: <span className="capitalize">{record.check_out_auth_method}</span>
+                            Phương thức: <span className="capitalize">{record.check_out_auth_method === 'fingerprint' ? 'vân tay' : record.check_out_auth_method === 'card' ? 'thẻ' : (record.check_out_auth_method || '-')}</span>
                           </div>
                         </>
                       ) : (

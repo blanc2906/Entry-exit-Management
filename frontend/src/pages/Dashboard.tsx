@@ -11,7 +11,7 @@ import { DashboardMetric } from '../types';
 
 const Dashboard: React.FC = () => {
   const { records, setRecords } = useRecentAttendanceStore();
-  const [metrics, setMetrics] = useState<DashboardMetric[]>();
+  const [metrics, setMetrics] = useState<DashboardMetric[]>([]);
   const [attendanceChartData, setAttendanceChartData] = useState<ChartData>({
     labels: [],
     datasets: []
@@ -85,17 +85,6 @@ const Dashboard: React.FC = () => {
       </div>
       
       <Overview metrics={metrics} />
-      
-      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-800">Biểu Đồ Chấm Công (7 ngày gần nhất)</h2>
-          </div>
-          <div className="p-6">
-            <AttendanceChart data={attendanceChartData} />
-          </div>
-        </div>
-      </div>
       
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
         <div className="px-6 py-4 border-b border-gray-200">

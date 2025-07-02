@@ -86,6 +86,18 @@ String targetDeviceIds = "";
 bool isBulkRegistrationMode = false;
 String bulkRegistrationUserId = "";
 
+// Thêm các hằng số cho retry mechanism
+const int MAX_RETRIES = 3;
+const int HTTP_TIMEOUT = 15000; // 15 giây timeout
+const int RETRY_DELAY = 2000; // 2 giây delay giữa các lần retry
+
+// Thêm struct để trả về kết quả HTTP request
+struct HttpResult {
+  bool success;
+  int statusCode;
+  String response;
+};
+
 // Add LCD helper function
 void updateLCD(const String& line1, const String& line2 = "") {
   String newText = line1 + line2;
@@ -99,6 +111,57 @@ void updateLCD(const String& line1, const String& line2 = "") {
     }
     currentLCDText = newText;
   }
+}
+
+HttpResult sendHttpRequestWithRetry(const String& url, const String& requestBody, int maxRetries = MAX_RETRIES) {
+  HTTPClient http;
+  http.setTimeout(HTTP_TIMEOUT);
+  
+  HttpResult result;
+  result.success = false;
+  result.statusCode = 0;
+  result.response = "";
+  
+  for (int attempt = 1; attempt <= maxRetries; attempt++) {
+    Serial.printf("HTTP Request attempt %d/%d to: %s\n", attempt, maxRetries, url.c_str());
+    //updateLCD("Sending Data...", "Attempt " + String(attempt));
+    
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    
+    int httpResponseCode = http.POST(requestBody);
+    result.statusCode = httpResponseCode;
+    
+    if (httpResponseCode > 0) {
+      result.response = http.getString();
+      Serial.printf("HTTP Response Code: %d\n", httpResponseCode);
+      Serial.printf("Response: %s\n", result.response.c_str());
+      
+      // Chỉ coi là thành công khi HTTP status code là 2xx
+      if (httpResponseCode >= 200 && httpResponseCode < 300) {
+        result.success = true;
+        http.end();
+        return result;
+      } else {
+        Serial.printf("HTTP Error: %d\n", httpResponseCode);
+        // Vẫn lưu response để xử lý lỗi từ server
+        http.end();
+        return result;
+      }
+    } else {
+      Serial.printf("HTTP Request failed: %d\n", httpResponseCode);
+    }
+    
+    http.end();
+    
+    // Nếu không phải lần cuối, delay trước khi retry
+    if (attempt < maxRetries) {
+      Serial.printf("Retrying in %d seconds...\n", RETRY_DELAY / 1000);
+      delay(RETRY_DELAY);
+    }
+  }
+  
+  return result; // Thất bại sau tất cả các lần retry
 }
 
 // WiFi setup functions
@@ -171,11 +234,79 @@ bool isValidIP(const String& ip) {
 }
 
 void handleRoot() {
-  String html = "<h1>Configure WiFi</h1><form method='POST' action='/setup'>";
-  html += "SSID: <input name='ssid' type='text'><br>";
-  html += "Password: <input name='password' type='password'><br>";
-  html += "Server IP: <input name='server_ip' type='text' value='" + serverIP + "'><br>";
-  html += "<input type='submit'></form>";
+  String html = R"rawliteral(
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Configure WiFi</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          background: #f4f6fb;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+        }
+        .container {
+          background: #fff;
+          padding: 32px 24px 24px 24px;
+          border-radius: 12px;
+          box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+          min-width: 320px;
+        }
+        h1 {
+          text-align: center;
+          margin-bottom: 24px;
+          color: #2d3a4b;
+        }
+        label {
+          display: block;
+          margin-bottom: 6px;
+          color: #444;
+        }
+        input[type='text'], input[type='password'] {
+          width: 100%;
+          padding: 8px 10px;
+          margin-bottom: 16px;
+          border: 1px solid #ccc;
+          border-radius: 6px;
+          font-size: 16px;
+        }
+        input[type='submit'] {
+          width: 100%;
+          padding: 10px;
+          background: #2d8cf0;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          font-size: 16px;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        input[type='submit']:hover {
+          background: #1a73e8;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>WiFi Configuration</h1>
+        <form method='POST' action='/setup'>
+          <label for='ssid'>WiFi SSID:</label>
+          <input name='ssid' id='ssid' type='text' required>
+          <label for='password'>Password:</label>
+          <input name='password' id='password' type='password' required>
+          <label for='server_ip'>IP Server:</label>
+          <input name='server_ip' id='server_ip' type='text' value=')rawliteral" + serverIP + R"rawliteral(' required>
+          <input type='submit' value='Save & Connect'>
+        </form>
+      </div>
+    </body>
+    </html>
+  )rawliteral";
   server.send(200, "text/html", html);
 }
 void startAPMode() {
@@ -1094,6 +1225,8 @@ bool getFingerprintEnroll(uint8_t id) {
     Serial.println(finger.fingerID);
     updateLCD("Fingerprint", "already exist");
     delay(5000);
+    updateLCD("Enrollment","failed");
+    delay(5000);
     return false;
   } else if (p == FINGERPRINT_NOTFOUND) {
     Serial.println("No duplicate found, proceeding with enrollment");
@@ -1129,6 +1262,7 @@ bool getFingerprintEnroll(uint8_t id) {
     switch (p) {
     case FINGERPRINT_OK:
       Serial.println("Image taken");
+      updateLCD("Image taken");
       break;
     case FINGERPRINT_NOFINGER:
       Serial.print(".");
@@ -1154,7 +1288,19 @@ bool getFingerprintEnroll(uint8_t id) {
 
   p = finger.createModel();
   if (p != FINGERPRINT_OK) {
-    Serial.println("Failed to create model");
+    if (p == FINGERPRINT_ENROLLMISMATCH) {
+      Serial.println("Fingerprints do not match!");
+      updateLCD("Fingerprints", "Do Not Match!");
+      delay(3000);
+      updateLCD("Please Use", "Same Finger");
+      delay(3000);
+      updateLCD("Enrollment", "Failed");
+      delay(2000);
+    } else {
+      Serial.println("Failed to create model");
+      updateLCD("Model Creation", "Failed");
+      delay(2000);
+    }
     return false;
   }
 
@@ -1336,40 +1482,17 @@ uint8_t uploadFingerprintTemplate(const char* hexData, uint16_t id) {
 
 void sendFingerDataToServer(String userId, uint8_t fingerId) {
   String server_url = "http://" + serverIP + ":3000/users/add-fingerprint";
-  Serial.println("DEBUG: ===== SENDING FINGERPRINT TO SERVER =====");
-  Serial.print("DEBUG: Server URL: ");
-  Serial.println(server_url);
-  Serial.print("DEBUG: User ID: ");
-  Serial.println(userId);
-  Serial.print("DEBUG: Finger ID: ");
-  Serial.println(fingerId);
-  
-  HTTPClient http;
-  http.begin(server_url);
-  http.addHeader("Content-Type", "application/json");
-  
-  Serial.println("DEBUG: Downloading fingerprint template...");
+
   String fingerTemplate = downloadFingerprintTemplate(fingerId);
   
   if (fingerTemplate.length() == 0) {
-    Serial.println("DEBUG: Failed to get fingerprint template");
+    Serial.println("Failed to get fingerprint template");
     deleteFingerprint(fingerId);
-    StaticJsonDocument<256> doc;
-    doc["success"] = false;
-    doc["error"] = "Failed to get fingerprint template";
-    doc["userId"] = userId;
-    doc["fingerId"] = fingerId;
-    
-    String response;
-    serializeJson(doc, response);
-    
-    String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
-    mqtt_client.publish(resultTopic.c_str(), response.c_str());
-    delay(3000);
+    sendFailureResponse(userId, fingerId, "Failed to get fingerprint template");
     return;
   }
   
-  Serial.print("DEBUG: Template length: ");
+  Serial.print("Template length: ");
   Serial.println(fingerTemplate.length());
   
   StaticJsonDocument<4096> doc; 
@@ -1381,74 +1504,34 @@ void sendFingerDataToServer(String userId, uint8_t fingerId) {
   String requestBody;
   serializeJson(doc, requestBody);
   
-  Serial.println("DEBUG: Sending POST request to server...");
-  Serial.print("DEBUG: Request body length: ");
-  Serial.println(requestBody.length());
-  Serial.print("DEBUG: Request body: ");
-  Serial.println(requestBody);
+  HttpResult httpResult = sendHttpRequestWithRetry(server_url, requestBody);
   
-  int httpResponseCode = http.POST(requestBody);
-  Serial.print("DEBUG: HTTP Response Code: ");
-  Serial.println(httpResponseCode);
-  
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.print("DEBUG: Server Response: ");
-    Serial.println(response);
-    
-    // Parse response để kiểm tra kết quả từ server
-    StaticJsonDocument<512> responseDoc;
-    DeserializationError error = deserializeJson(responseDoc, response);
-    
-    if (error) {
-      Serial.print("DEBUG: JSON parsing error: ");
-      Serial.println(error.c_str());
-    }
-    
-    if (error || !responseDoc["success"]) {
-      Serial.println("DEBUG: Server returned error, deleting fingerprint");
-      // Nếu server báo lỗi, xóa vân tay
-      deleteFingerprint(fingerId);
-      
-      // Gửi thông báo lỗi qua MQTT
-      StaticJsonDocument<256> errorDoc;
-      errorDoc["success"] = false;
-      errorDoc["error"] = "Server error: " + response;
-      errorDoc["userId"] = userId;
-      errorDoc["fingerId"] = fingerId;
-      String errorResponse;
-      serializeJson(errorDoc, errorResponse);
-      
-      String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
-      mqtt_client.publish(resultTopic.c_str(), errorResponse.c_str());
-    } else {
-      Serial.println("DEBUG: Server returned success");
-      // Hiển thị thông báo thành công trên LCD
-      updateLCD("Registration", "Success!");
-      delay(3000);
-    }
-  } else {
-    Serial.print("DEBUG: HTTP Error: ");
-    Serial.println(httpResponseCode);
-    // Xóa vân tay nếu gửi HTTP thất bại
+  if (httpResult.success) {
+    updateLCD("Registration", "Success!");
+    delay(3000);
+  } else if (httpResult.statusCode > 0) {
     deleteFingerprint(fingerId);
-    
-    // Gửi thông báo lỗi qua MQTT
-    StaticJsonDocument<256> doc;
-    doc["success"] = false;
-    doc["error"] = "HTTP Error: " + String(httpResponseCode);
-    doc["userId"] = userId;
-    doc["fingerId"] = fingerId;
-    
-    String response;
-    serializeJson(doc, response);
-    
-    String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
-    mqtt_client.publish(resultTopic.c_str(), response.c_str());
+    sendFailureResponse(userId, fingerId, "Server error: " + httpResult.response);
+  } else {
+    deleteFingerprint(fingerId);
+    sendFailureResponse(userId, fingerId, "Network connection failed");
   }
+
+}
+
+// Hàm helper để gửi thông báo lỗi
+void sendFailureResponse(String userId, uint8_t fingerId, String errorMessage) {
+  StaticJsonDocument<256> doc;
+  doc["success"] = false;
+  doc["error"] = errorMessage;
+  doc["userId"] = userId;
+  doc["fingerId"] = fingerId;
   
-  http.end();
-  Serial.println("DEBUG: ===== END SENDING FINGERPRINT =====");
+  String response;
+  serializeJson(doc, response);
+  
+  String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+  mqtt_client.publish(resultTopic.c_str(), response.c_str());
 }
 
 void getTemplateFromServerWithUserId(String userId, uint16_t fingerId) {
@@ -1543,10 +1626,6 @@ void sendCardNumberToServer(String userId, String cardNumber) {
   Serial.print("Sending request to: ");
   Serial.println(server_url);
   
-  HTTPClient http;
-  http.begin(server_url);
-  http.addHeader("Content-Type", "application/json");
-  
   StaticJsonDocument<256> doc; 
   doc["userId"] = userId;
   doc["cardNumber"] = cardNumber;
@@ -1558,45 +1637,51 @@ void sendCardNumberToServer(String userId, String cardNumber) {
   Serial.println("Sending POST request to server...");
   Serial.println("Request body: " + requestBody);
   
-  // Hiển thị đang xử lý
   updateLCD("Processing...", "Please Wait");
   
-  int httpResponseCode = http.POST(requestBody);
+  HttpResult httpResult = sendHttpRequestWithRetry(server_url, requestBody);
   
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.println("HTTP Response code: " + String(httpResponseCode));
-    Serial.println("Response: " + response);
+  // Debug logging
+  Serial.printf("HTTP Result - Success: %s, Status: %d\n", 
+                httpResult.success ? "true" : "false", 
+                httpResult.statusCode);
+  Serial.printf("Response: %s\n", httpResult.response.c_str());
+  
+  waitingForCardScan = false;
+  currentUserId = "";
+  isCardRegistrationMode = false;
+  
+  if (httpResult.success) {
+    // HTTP request thành công (status 2xx)
+    Serial.println("Card registration successful (HTTP 2xx)");
+    updateLCD("Card Registered", "Successfully!");
+  } else if (httpResult.statusCode > 0) {
+    // HTTP request thành công nhưng server trả về lỗi (status 4xx, 5xx)
+    Serial.printf("Server returned error status: %d\n", httpResult.statusCode);
     
-    waitingForCardScan = false;
-    currentUserId = "";
-    isCardRegistrationMode = false; // Reset chế độ đăng ký thẻ
+    // Parse response để lấy thông tin lỗi từ server
+    StaticJsonDocument<512> responseDoc;
+    DeserializationError error = deserializeJson(responseDoc, httpResult.response);
     
-    // Check if response code is 201 (success)
-    if (httpResponseCode == 201) {
-      updateLCD("Card Registered", "Successfully!");
+    if (error) {
+      Serial.print("JSON parsing error: ");
+      Serial.println(error.c_str());
+      updateLCD("Registration", "Failed!");
     } else {
+      // Lấy thông báo lỗi từ server
+      String serverError = responseDoc["message"] | "Registration failed";
+      Serial.print("Server error message: ");
+      Serial.println(serverError);
       updateLCD("Registration", "Failed!");
     }
-    
-    // Delay to show the message for 3 seconds
-    delay(3000);
-    updateLCD("Place Finger");
-    
   } else {
-    Serial.println("HTTP Error: " + String(httpResponseCode));
-    
-    waitingForCardScan = false;
-    currentUserId = "";
-    isCardRegistrationMode = false; // Reset chế độ đăng ký thẻ
+    // Network error - không thể kết nối đến server
+    Serial.println("Network connection failed");
     updateLCD("Network Error!", "Try Again");
-    
-    // Delay to show the error message for 3 seconds
-    delay(3000);
-    updateLCD("Place Finger");
   }
   
-  http.end();
+  delay(3000);
+  updateLCD("Place Finger");
 }
 
 // Thêm hàm gửi config hiện tại
@@ -1731,21 +1816,7 @@ void handleDeviceConfig(const String& message) {
 
 void sendBulkFingerDataToServer(String userId, uint8_t fingerId, String targetDeviceIds) {
   String server_url = "http://" + serverIP + ":3000/users/add-fingerprint";
-  Serial.println("DEBUG: ===== SENDING BULK FINGERPRINT TO SERVER =====");
-  Serial.print("DEBUG: Server URL: ");
-  Serial.println(server_url);
-  Serial.print("DEBUG: User ID: ");
-  Serial.println(userId);
-  Serial.print("DEBUG: Finger ID: ");
-  Serial.println(fingerId);
-  Serial.print("DEBUG: Target Device IDs: ");
-  Serial.println(targetDeviceIds);
   
-  HTTPClient http;
-  http.begin(server_url);
-  http.addHeader("Content-Type", "application/json");
-  
-  Serial.println("DEBUG: Downloading fingerprint template...");
   String fingerTemplate = downloadFingerprintTemplate(fingerId);
   
   if (fingerTemplate.length() == 0) {
@@ -1811,56 +1882,39 @@ void sendBulkFingerDataToServer(String userId, uint8_t fingerId, String targetDe
   Serial.print("DEBUG: Request body: ");
   Serial.println(requestBody);
   
-  int httpResponseCode = http.POST(requestBody);
-  Serial.print("DEBUG: HTTP Response Code: ");
-  Serial.println(httpResponseCode);
+  HttpResult httpResult = sendHttpRequestWithRetry(server_url, requestBody);
   
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.print("DEBUG: Server Response: ");
-    Serial.println(response);
+  if (httpResult.success) {
+    // HTTP request thành công (status 2xx)
+    Serial.println("DEBUG: Server returned success");
+    updateLCD("Registration", "Success!");
+    delay(3000);
+  } else if (httpResult.statusCode > 0) {
+    // HTTP request thành công nhưng server trả về lỗi (status 4xx, 5xx)
+    Serial.println("DEBUG: Server returned error, deleting fingerprint");
+    deleteFingerprint(fingerId);
     
-    // Parse response để kiểm tra kết quả từ server
-    StaticJsonDocument<512> responseDoc;
-    DeserializationError error = deserializeJson(responseDoc, response);
+    // Gửi thông báo lỗi qua MQTT
+    StaticJsonDocument<256> errorDoc;
+    errorDoc["success"] = false;
+    errorDoc["error"] = "Server error: " + httpResult.response;
+    errorDoc["userId"] = userId;
+    errorDoc["fingerId"] = fingerId;
+    String errorResponse;
+    serializeJson(errorDoc, errorResponse);
     
-    if (error) {
-      Serial.print("DEBUG: JSON parsing error: ");
-      Serial.println(error.c_str());
-    }
-    
-    if (error || !responseDoc["success"]) {
-      Serial.println("DEBUG: Server returned error, deleting fingerprint");
-      // Nếu server báo lỗi, xóa vân tay
-      deleteFingerprint(fingerId);
-      
-      // Gửi thông báo lỗi qua MQTT
-      StaticJsonDocument<256> errorDoc;
-      errorDoc["success"] = false;
-      errorDoc["error"] = "Server error: " + response;
-      errorDoc["userId"] = userId;
-      errorDoc["fingerId"] = fingerId;
-      String errorResponse;
-      serializeJson(errorDoc, errorResponse);
-      
-      String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
-      mqtt_client.publish(resultTopic.c_str(), errorResponse.c_str());
-    } else {
-      Serial.println("DEBUG: Server returned success");
-      // Hiển thị thông báo thành công trên LCD
-      updateLCD("Registration", "Success!");
-      delay(3000);
-    }
+    String resultTopic = String(FINGERPRINT_REGISTRATION_RESULT) + macAddress;
+    mqtt_client.publish(resultTopic.c_str(), errorResponse.c_str());
   } else {
+    // Network error - không thể kết nối đến server
     Serial.print("DEBUG: HTTP Error: ");
-    Serial.println(httpResponseCode);
-    // Xóa vân tay nếu gửi HTTP thất bại
+    Serial.println(httpResult.statusCode);
     deleteFingerprint(fingerId);
     
     // Gửi thông báo lỗi qua MQTT
     StaticJsonDocument<256> doc;
     doc["success"] = false;
-    doc["error"] = "HTTP Error: " + String(httpResponseCode);
+    doc["error"] = "Network connection failed";
     doc["userId"] = userId;
     doc["fingerId"] = fingerId;
     
@@ -1876,7 +1930,6 @@ void sendBulkFingerDataToServer(String userId, uint8_t fingerId, String targetDe
   targetDeviceIds = "";
   bulkRegistrationUserId = "";
   
-  http.end();
   Serial.println("DEBUG: ===== END SENDING BULK FINGERPRINT =====");
 }
 

@@ -39,9 +39,23 @@ export const userService = {
     return response.data;
   },
 
-  updateUser: async (userId: string, userData: Partial<User>): Promise<User> => {
-    const { data } = await axios.patch<User>(`${API_URL}/users/${userId}`, userData);
-    return data;
+  async updateUser(userId: string, userData: { name?: string; email?: string; workSchedule?: string }): Promise<User> {
+    const response = await axios.put(`${API_URL}/users/${userId}`, userData);
+    return response.data.user;
+  },
+
+  async deleteFingerprint(userId: string) {
+    const response = await axios.delete(`${API_URL}/users/${userId}/fingerprint`, {
+      data: { userId }
+    });
+    return response.data;
+  },
+
+  async deleteCard(userId: string) {
+    const response = await axios.delete(`${API_URL}/users/${userId}/card`, {
+      data: { userId }
+    });
+    return response.data;
   },
 
   async requestAddFingerprint(userId: string, deviceId: string) {

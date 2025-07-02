@@ -8,6 +8,7 @@ export interface User {
   fingerId?: number;
   cardNumber?: string;
   fingerTemplate?: string;
+  workSchedule?: string;
 }
 
 export interface UsersResponse {

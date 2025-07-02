@@ -4,6 +4,9 @@ import { CreateUserDto } from "./dto/create-user.dto";
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
 import { AddCardNumberDto } from "./dto/add-cardnumber.dto";
 import { FindAllUsersDto } from "./dto/find-all-user.dto";
+import { UpdateUserDto } from "./dto/update-user.dto";
+import { DeleteFingerprintDto } from "./dto/delete-fingerprint.dto";
+import { DeleteCardDto } from "./dto/delete-card.dto";
 import { MessagePattern, Payload } from "@nestjs/microservices";
 import { UpdateWorkScheduleDto } from "./dto/update-workschedule.dto";
 import { AppWebSocketGateway } from "../websocket/websocket.gateway";
@@ -34,6 +37,81 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async removeUser(@Param('userId') userId: string) {
     return await this.usersService.removeUser(userId);
+  }
+
+  @Put(':userId')
+  @HttpCode(HttpStatus.OK)
+  async updateUser(
+    @Param('userId') userId: string,
+    @Body() updateUserDto: UpdateUserDto
+  ) {
+    const updatedUser = await this.usersService.updateUser(userId, updateUserDto);
+    
+    return {
+      success: true,
+      message: 'User updated successfully',
+      user: updatedUser
+    };
+  }
+
+  @Delete(':userId/fingerprint')
+  @HttpCode(HttpStatus.OK)
+  async deleteFingerprint(
+    @Param('userId') userId: string,
+    @Body() deleteFingerprintDto: DeleteFingerprintDto
+  ) {
+    deleteFingerprintDto.userId = userId; // Đảm bảo userId từ param được sử dụng
+    
+    const result = await this.usersService.deleteFingerprint(deleteFingerprintDto);
+    
+    // Gửi thông báo qua WebSocket
+    this.webSocketGateway.sendFingerprintNotification({
+      type: 'fingerprint_deleted',
+      message: result.message,
+      user: {
+        _id: userId,
+        name: `User ${userId}`,
+        email: ''
+      },
+      timestamp: new Date().toISOString(),
+      success: true,
+      deletedDevices: result.deletedDevices
+    });
+    
+    return {
+      success: true,
+      message: result.message,
+      deletedDevices: result.deletedDevices
+    };
+  }
+
+  @Delete(':userId/card')
+  @HttpCode(HttpStatus.OK)
+  async deleteCard(
+    @Param('userId') userId: string,
+    @Body() deleteCardDto: DeleteCardDto
+  ) {
+    deleteCardDto.userId = userId; // Đảm bảo userId từ param được sử dụng
+    
+    const result = await this.usersService.deleteCard(deleteCardDto);
+    
+    // Gửi thông báo qua WebSocket
+    this.webSocketGateway.sendFingerprintNotification({
+      type: 'card_deleted',
+      message: result.message,
+      user: {
+        _id: userId,
+        name: `User ${userId}`,
+        email: ''
+      },
+      timestamp: new Date().toISOString(),
+      success: true
+    });
+    
+    return {
+      success: true,
+      message: result.message
+    };
   }
 
   @Post('add-fingerprint')
@@ -100,7 +178,7 @@ export class UsersController {
       // Gửi thông báo thất bại qua WebSocket
       this.webSocketGateway.sendFingerprintNotification({
         type: 'card_failed',
-        message: `Đăng ký thẻ thất bại: ${error.message}`,
+        message: `Đăng ký thẻ thất bại`,
         user: {
           _id: addCardNumberDto.userId,
           name: `User ${addCardNumberDto.userId}`,
@@ -133,7 +211,7 @@ export class UsersController {
       // Chỉ gửi thông báo thất bại qua WebSocket
       this.webSocketGateway.sendFingerprintNotification({
         type: 'fingerprint_failed',
-        message: `Đăng ký vân tay thất bại: ${data.error}`,
+        message: `Đăng ký vân tay thất bại`,
         user: {
           _id: data.userId,
           name: `User ${data.userId}`,
@@ -144,24 +222,6 @@ export class UsersController {
         error: data.error
       });
     }
-  }
-
-  @Get(':userId/work-schedule')
-  async getUserWorkSchedule(@Param('userId') userId: string) {
-    return await this.usersService.getUserWorkSchedule(userId);
-  }
-
-  @Put(':userId/work-schedule')
-  async updateUserWorkSchedule(
-    @Param('userId') userId: string,
-    @Body() updateWorkScheduleDto: UpdateWorkScheduleDto
-  ) {
-    return await this.usersService.updateUserWorkSchedule(userId, updateWorkScheduleDto);
-  }
-
-  @Delete(':userId/work-schedule')
-  async removeUserWorkSchedule(@Param('userId') userId: string) {
-    return await this.usersService.removeUserWorkSchedule(userId);
   }
 
   @Post(':userId/request-bulk-fingerprint')

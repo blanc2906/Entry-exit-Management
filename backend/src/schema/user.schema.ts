@@ -24,7 +24,8 @@ export class User {
     @Prop({default : null})
     fingerTemplate: string;
 
-    @Prop({unique: true, sparse: true})
+    // Sparse unique index - only indexes documents where cardNumber exists and is not null
+    @Prop({unique: true, sparse: true, index: true})
     cardNumber : string;
 
     @Prop({required : true, default : now})
@@ -45,3 +46,7 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Ensure the cardNumber index is properly configured as sparse
+// This will only index documents where cardNumber field exists and is not null
+UserSchema.index({ cardNumber: 1 }, { unique: true, sparse: true });

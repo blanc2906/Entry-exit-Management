@@ -113,6 +113,6 @@ export class MqttAttendanceHandler {
         if (error instanceof UnauthorizedException) {
             return 'User Not Authorized';
         }
-        return 'System Error';
+        return 'Not Recognized';
     }
 } 

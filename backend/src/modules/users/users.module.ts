@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { HistoryModule } from '../history/history.module';
 import { WebSocketModule } from '../websocket/websocket.module';
 import { DevicesModule } from '../devices/devices.module';
+import { MqttModule } from '../mqtt/mqtt.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { DevicesModule } from '../devices/devices.module';
       { name: WorkSchedule.name, schema: WorkScheduleSchema },
       { name: WorkShift.name, schema: WorkShiftSchema }
     ]),
+    MqttModule,
     ClientsModule.registerAsync([
       {
         name: 'MQTT_CLIENT',
@@ -40,6 +42,7 @@ import { DevicesModule } from '../devices/devices.module';
     WebSocketModule,
     forwardRef(() => DevicesModule),
   ],
+
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService]
