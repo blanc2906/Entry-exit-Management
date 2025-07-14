@@ -1,4 +1,4 @@
-import { Body, Controller, Logger, Post, Param, Get, Query, Delete, HttpCode, HttpStatus, Put, Inject, forwardRef } from "@nestjs/common";
+import { Body, Controller, Logger, Post, Param, Get, Query, Delete, HttpCode, HttpStatus, Put, Inject, forwardRef, UseInterceptors, UploadedFile } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { CreateUserDto } from "./dto/create-user.dto";
 import { AddFingerprintDto } from "./dto/add-fingerprint.dto";
@@ -11,6 +11,8 @@ import { MessagePattern, Payload } from "@nestjs/microservices";
 import { UpdateWorkScheduleDto } from "./dto/update-workschedule.dto";
 import { AppWebSocketGateway } from "../websocket/websocket.gateway";
 import { AddBulkFingerprintDto } from "./dto/add-bulk-fingerprint.dto";
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Multer } from 'multer';
 
 @Controller('users')
 export class UsersController {
@@ -230,5 +232,11 @@ export class UsersController {
     @Body() addBulkFingerprintDto: AddBulkFingerprintDto
   ) {
     return this.usersService.requestAddBulkFingerprint(userId, addBulkFingerprintDto.deviceIds);
+  }
+
+  @Post('import-excel')
+  @UseInterceptors(FileInterceptor('file'))
+  async importUsersFromExcel(@UploadedFile() file: any) {
+    return this.usersService.importUsersFromExcel(file);
   }
 }

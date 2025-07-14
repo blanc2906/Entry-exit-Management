@@ -14,7 +14,7 @@ interface NavItem {
   path: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
+const Sidebar: React.FC = () => {
   const { isActive } = useActiveRoute();
 
   const navItems: NavItem[] = [
@@ -24,25 +24,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
     { name: 'Chấm công', icon: <Calendar size={20} />, path: '/attendance' },
     { name: 'Ca làm', icon: <Calendar size={20} />, path: '/workshifts' },
     { name: 'Lịch làm việc', icon: <Calendar size={20} />, path: '/workschedules' },
-    { name: 'Cài đặt', icon: <Settings size={20} />, path: '/settings' },
   ];
 
   return (
     <>
-      {/* Mobile sidebar backdrop */}
-      {isOpen && (
-        <div 
-          className="fixed inset-0 bg-gray-900 bg-opacity-50 z-20 lg:hidden" 
-          onClick={toggle}
-          aria-hidden="true"
-        ></div>
-      )}
-
       {/* Sidebar */}
       <aside 
-        className={`fixed top-0 left-0 z-40 h-screen transition-all duration-300 ease-in-out 
-          ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} 
-          w-64 bg-white border-r border-gray-200 pt-20 lg:pt-16`}
+        className={`fixed top-0 left-0 z-40 h-screen w-64 bg-white border-r border-gray-200 pt-20 lg:pt-16`}
       >
         <div className="h-full flex flex-col justify-between px-3 py-4 overflow-y-auto">
           <nav className="space-y-1 mt-2">
@@ -86,14 +74,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, toggle }) => {
             </div>
           </div>
         </div>
-
-        <button
-          onClick={toggle}
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 bg-white border border-gray-200 rounded-full p-1 shadow-md hidden lg:flex"
-          aria-label={isOpen ? "Collapse sidebar" : "Expand sidebar"}
-        >
-          {isOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-        </button>
       </aside>
     </>
   );

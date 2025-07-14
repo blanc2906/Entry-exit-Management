@@ -6,7 +6,6 @@ export class CreateWorkScheduleDto {
   @IsNotEmpty()
   scheduleName: string;
 
-  // shifts: { 'Sunday': workShiftId, ... }
   shifts: Record<string, Types.ObjectId>;
 
   @IsString()

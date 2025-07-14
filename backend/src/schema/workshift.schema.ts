@@ -4,37 +4,37 @@ import { Document } from 'mongoose';
 @Schema()
 export class WorkShift extends Document {
   @Prop({ required: true, unique: true })
-  code: string; // Mã ca
+  code: string; 
 
   @Prop({ required: true })
-  name: string; // Tên ca
+  name: string; 
 
   @Prop({ required: true })
-  startTime: string; // Giờ vào (HH:mm)
+  startTime: string; 
 
   @Prop({ required: true })
-  endTime: string; // Giờ ra (HH:mm)
+  endTime: string; 
 
   @Prop()
-  breakStart?: string; // Giờ bắt đầu nghỉ trưa
+  breakStart?: string; 
 
   @Prop()
-  breakEnd?: string; // Giờ kết thúc nghỉ trưa
+  breakEnd?: string; 
 
   @Prop()
-  totalWorkTime: string; // Tổng giờ làm (HH:mm)
+  totalWorkTime: string; 
 
   @Prop()
-  allowLate: number; // Số phút cho phép trễ
+  allowLate: number; 
 
   @Prop()
-  allowEarly: number; // Số phút cho phép về sớm
+  allowEarly: number; 
 
   @Prop()
-  overtimeBefore: number; // Tăng ca trước giờ làm
+  overtimeBefore: number; 
 
   @Prop()
-  overtimeAfter: number; // Tăng ca sau giờ làm
+  overtimeAfter: number; 
 }
 
 export const WorkShiftSchema = SchemaFactory.createForClass(WorkShift); 

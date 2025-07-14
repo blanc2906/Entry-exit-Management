@@ -80,5 +80,16 @@ export const userService = {
     return response.data;
   },
 
+  async importUsersFromExcel(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await axios.post(`${API_URL}/users/import-excel`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
   // Thêm các methods khác khi cần
 };

@@ -80,57 +80,6 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar }) => {
         <div className="flex items-center space-x-4">
           <div className="relative">
             <button
-              onClick={toggleNotifications}
-              className="p-2 text-gray-500 rounded-full hover:bg-gray-100 relative"
-              aria-label="Notifications"
-            >
-              <Bell size={20} />
-              {unreadCount > 0 && (
-                <span className="absolute top-0 right-0 inline-block w-5 h-5 text-xs text-white bg-red-500 rounded-full flex items-center justify-center">
-                  {unreadCount}
-                </span>
-              )}
-            </button>
-
-            {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg py-2 z-40 border border-gray-200">
-                <div className="px-4 py-2 border-b border-gray-100 flex justify-between items-center">
-                  <h3 className="font-semibold text-gray-700">Notifications</h3>
-                  <button 
-                    onClick={markAllAsRead}
-                    className="text-xs text-primary-600 hover:text-primary-800"
-                  >
-                    Mark all as read
-                  </button>
-                </div>
-                <div className="max-h-96 overflow-y-auto">
-                  {notifications.length > 0 ? (
-                    notifications.map((notification) => (
-                      <div 
-                        key={notification.id} 
-                        className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${
-                          !notification.read ? 'bg-blue-50' : ''
-                        }`}
-                      >
-                        <p className="text-sm text-gray-700">{notification.text}</p>
-                        <p className="text-xs text-gray-500 mt-1">2 hours ago</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="px-4 py-3 text-sm text-gray-500">No notifications</p>
-                  )}
-                </div>
-                <div className="px-4 py-2 border-t border-gray-100">
-                  <button className="text-sm text-primary-600 hover:text-primary-800 w-full text-center">
-                    View all notifications
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="relative">
-            <button
               onClick={toggleProfile}
               className="flex items-center text-gray-700 hover:text-primary-600"
               aria-label="User profile"

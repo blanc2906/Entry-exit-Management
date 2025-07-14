@@ -11,7 +11,7 @@ export class WorkSchedule extends Document {
     of: { type: Types.ObjectId, ref: 'WorkShift' },
     default: {},
   })
-  shifts: Map<string, Types.ObjectId>; // { 'Sunday': workShiftId, ... }
+  shifts: Map<string, Types.ObjectId>;
 
   @Prop()
   note?: string;

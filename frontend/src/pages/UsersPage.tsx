@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Settings, Edit, Trash, Fingerprint, CreditCard, Loader2 } from 'lucide-react';
+import { Plus, Settings, Edit, Trash, Fingerprint, CreditCard, Loader2, Upload } from 'lucide-react';
 import { Table } from '../components/common/Table';
 import { Pagination } from '../components/common/Pagination';
 import { UserFilters } from '../components/users/UserFilters';
@@ -63,6 +63,9 @@ const UsersPage: React.FC = () => {
 
   // Hook để lắng nghe thông báo fingerprint và card
   const notification = useNotification();
+
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any[]>([]);
 
   useEffect(() => {
     fetchUsers(filters);
@@ -264,6 +267,23 @@ const UsersPage: React.FC = () => {
     }
   };
 
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsImporting(true);
+    try {
+      const result = await userService.importUsersFromExcel(file);
+      setImportResult(result);
+      message.success('Import thành công!');
+      fetchUsers(filters);
+    } catch (error) {
+      message.error('Import thất bại!');
+    } finally {
+      setIsImporting(false);
+      e.target.value = '';
+    }
+  };
+
   const renderDeleteConfirmMessage = (user: User) => (
     <div className="space-y-2">
       <p>Bạn có chắc chắn muốn xóa nhân viên này?</p>
@@ -394,14 +414,34 @@ const UsersPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">Quản lí nhân viên</h1>
-        <button
-          onClick={handleAddUser}
-          className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-        >
-          <Plus size={18} className="mr-2" />
-          Thêm nhân viên
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleAddUser}
+            className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            <Plus size={18} className="mr-2" />
+            Thêm nhân viên
+          </button>
+          <label className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors cursor-pointer">
+            <Upload size={18} className="mr-2" />
+            Import Excel
+            <input type="file" accept=".xlsx,.xls" onChange={handleImportExcel} className="hidden" disabled={isImporting} />
+          </label>
+        </div>
       </div>
+
+      {importResult.length > 0 && (
+        <div className="bg-white p-4 rounded-lg border border-gray-200 mt-2">
+          <h2 className="font-semibold mb-2">Kết quả import:</h2>
+          <ul className="list-disc pl-5">
+            {importResult.map((r, idx) => (
+              <li key={idx} className={r.status === 'success' ? 'text-green-600' : 'text-red-600'}>
+                {r.userId}: {r.status} {r.error && `- ${r.error}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         <UserFilters

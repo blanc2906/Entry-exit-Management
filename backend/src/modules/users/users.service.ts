@@ -18,6 +18,8 @@ import { WorkShift } from "src/schema/workshift.schema";
 import { UpdateWorkScheduleDto } from "./dto/update-workschedule.dto";
 import { DevicesService } from "../devices/devices.service";
 import { MqttService } from "../mqtt/mqtt.service";
+import * as XLSX from 'xlsx';
+import type { Multer } from 'multer';
 
 @Injectable()
 export class UsersService {
@@ -535,6 +537,30 @@ export class UsersService {
       }
       throw new HttpException(`Failed to delete card: ${error.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
+
+  async importUsersFromExcel(file: any) {
+    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(worksheet);
+
+    const results = [];
+    for (const row of data) {
+      try {
+        const userDto = {
+          userId: row['userId'] || row['Mã nhân viên'],
+          name: row['name'] || row['Tên'],
+          email: row['email'] || row['Email'],
+          createdAt: new Date(),
+        };
+        await this.createUser(userDto);
+        results.push({ userId: userDto.userId, status: 'success' });
+      } catch (error) {
+        results.push({ userId: row['userId'] || row['Mã nhân viên'], status: 'failed', error: error.message });
+      }
+    }
+    return results;
   }
 
 }

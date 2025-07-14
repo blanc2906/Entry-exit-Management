@@ -5,13 +5,13 @@ import { WorkShift } from '../../types/workshift';
 import { workshiftService } from '../../services/workshift.service';
 
 const daysOfWeek = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday',
+  { key: 'Monday', label: 'Thứ Hai' },
+  { key: 'Tuesday', label: 'Thứ Ba' },
+  { key: 'Wednesday', label: 'Thứ Tư' },
+  { key: 'Thursday', label: 'Thứ Năm' },
+  { key: 'Friday', label: 'Thứ Sáu' },
+  { key: 'Saturday', label: 'Thứ Bảy' },
+  { key: 'Sunday', label: 'Chủ Nhật' },
 ];
 
 interface WorkScheduleFormProps {
@@ -80,14 +80,13 @@ export const WorkScheduleForm: React.FC<WorkScheduleFormProps> = ({
       </Row>
       <Row gutter={16}>
         {daysOfWeek.map((day) => (
-          <Col xs={24} md={12} key={day}>
+          <Col xs={24} md={12} key={day.key}>
             <Form.Item
-              name={['shifts', day]}
-              label={`Ca làm việc cho ${day}`}
-              rules={[{ required: true, message: `Chọn ca cho ${day}` }]}
+              name={['shifts', day.key]}
+              label={`Ca làm việc cho ${day.label}`}
             >
               <Select
-                placeholder={`Chọn ca cho ${day}`}
+                placeholder={`Chọn ca cho ${day.label}`}
                 options={workshifts.map((ws) => ({
                   value: ws._id,
                   label: `${ws.name} (${ws.startTime} - ${ws.endTime})`,
